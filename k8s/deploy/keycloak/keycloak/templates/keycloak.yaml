@@ -19,7 +19,7 @@ spec:
     port: 5432
   http:
     httpEnabled: true
-    httpPort: 80
+    httpPort: 8080
   hostname:
     hostname: http://{{ .Values.hostname }}
     backchannelDynamic: true
