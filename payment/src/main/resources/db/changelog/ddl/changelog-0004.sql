@@ -7,4 +7,4 @@ ADD COLUMN created_by varchar(255) DEFAULT 'admin',
 ADD COLUMN last_modified_on timestamp(6) DEFAULT CURRENT_TIMESTAMP,
 ADD COLUMN last_modified_by varchar(255) DEFAULT 'admin';
 
-ALTER TABLE IF EXISTS "payment_provider" RENAME COLUMN is_enabled TO enabled;
+-- ALTER TABLE IF EXISTS "payment_provider" RENAME COLUMN is_enabled TO enabled;
