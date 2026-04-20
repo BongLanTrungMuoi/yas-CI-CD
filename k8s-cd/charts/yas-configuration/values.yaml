@@ -205,7 +205,7 @@ backofficeBffExtraConfig:
   spring:
     data:
       redis:
-        host: redis-master.__NS_PREFIX__-redis.svc.cluster.local
+        host: __NS_PREFIX__-redis-master.__NS_PREFIX__-redis.svc.cluster.local
         password: ${REDIS_PASSWORD}
         port: 6379
     security:
@@ -225,7 +225,7 @@ storefrontBffExtraConfig:
   spring:
     data:
       redis:
-        host: redis-master.__NS_PREFIX__-redis.svc.cluster.local
+        host: __NS_PREFIX__-redis-master.__NS_PREFIX__-redis.svc.cluster.local
         password: ${REDIS_PASSWORD}
         port: 6379
     security:
