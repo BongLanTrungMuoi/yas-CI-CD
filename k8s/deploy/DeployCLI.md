@@ -24,10 +24,10 @@ helm upgrade --install ingress-nginx ingress-nginx/ingress-nginx \
 
 ```bash
 cd k8s/deploy/
-./deploy-yas-configuration.sh
 ./setup-cluster.sh
 ./setup-redis.sh
 ./setup-keycloak.sh
+./deploy-yas-configuration.sh
 ./deploy-yas-applications.sh
 ```
 
