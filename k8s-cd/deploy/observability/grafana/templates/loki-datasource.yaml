@@ -10,7 +10,7 @@ spec:
     name: Loki
     type: loki
     uid: loki
-    url: http://__NS_PREFIX__-loki-gateway.__NS_PREFIX__-observability.svc.cluster.local
+    url: http://loki-gateway
     access: proxy
     jsonData:
       httpMethod: GET

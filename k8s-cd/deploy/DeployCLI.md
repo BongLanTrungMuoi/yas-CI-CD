@@ -76,17 +76,3 @@ kubectl delete ns $NAMESPACES --ignore-not-found=true
 # 5. (Tùy chọn) Xóa bỏ các Persistent Volumes (PV) bị mồ côi nếu StorageClass không tự dọn
 kubectl delete pv --all
 ```
-
-```bash
-# Set the prefix you want to delete (e.g., dev-34)
-export NS_PREFIX="dev-34"
-
-# 1. Gỡ Helm Release
-helm list -A -o json | jq -r --arg prefix "$NS_PREFIX-" '.[] | select(.name | startswith($prefix)) | .name + " -n " + .namespace' | xargs -r -L1 helm uninstall --ignore-not-found
-
-# 2. Xóa Namespace
-kubectl get ns -o name | grep "$NS_PREFIX-" | xargs -r kubectl delete --ignore-not-found
-
-# 3. Xóa ClusterRole & ClusterRoleBinding
-kubectl get clusterrole,clusterrolebinding -o name | grep "$NS_PREFIX" | xargs -r kubectl delete --ignore-not-found
-```

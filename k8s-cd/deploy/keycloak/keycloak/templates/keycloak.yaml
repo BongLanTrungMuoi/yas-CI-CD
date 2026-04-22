@@ -14,7 +14,7 @@ spec:
     passwordSecret:
       name: postgresql-credentials
       key: password
-    host: postgresql.__NS_PREFIX__-postgres.svc.cluster.local
+    host: postgresql.postgres
     database: keycloak
     port: 5432
   http:

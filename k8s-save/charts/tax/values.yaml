@@ -1,0 +1,10 @@
+backend:
+  image:
+    repository: hownamee/yas-tax
+    tag: latest
+
+  nameOverride: tax
+  fullnameOverride: tax
+  databaseName: tax
+  ingress:
+    enabled: false

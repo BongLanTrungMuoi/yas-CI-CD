@@ -1,0 +1,10 @@
+backend:
+  image:
+    repository: hownamee/yas-rating
+    tag: latest
+
+  nameOverride: rating
+  fullnameOverride: rating
+  databaseName: rating
+  ingress:
+    enabled: false

@@ -6,7 +6,7 @@ metadata:
     dashboards: "grafana"
 spec:
   external:
-    url: http://__NS_PREFIX__-prometheus-grafana.__NS_PREFIX__-observability.svc.cluster.local
+    url: http://prometheus-grafana
     adminPassword:
       name: grafana-admin-credentials
       key: username

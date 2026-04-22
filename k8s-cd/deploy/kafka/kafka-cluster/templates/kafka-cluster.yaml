@@ -35,8 +35,6 @@ spec:
       min.insync.replicas: 1
   zookeeper:
     replicas: {{ .Values.zookeeper.replicas }}
-    config:
-      quorumListenOnAllIPs: "true"
     storage:
       type: persistent-claim
       size: {{ .Values.zookeeper.storeSize }}

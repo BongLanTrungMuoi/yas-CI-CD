@@ -11,7 +11,7 @@ spec:
     type: tempo
     uid: tempo
     access: proxy
-    url: http://__NS_PREFIX__-tempo.__NS_PREFIX__-observability.svc.cluster.local:3100
+    url: http://tempo:3100
     jsonData:
       httpMethod: GET
       tracesToLogsV2:

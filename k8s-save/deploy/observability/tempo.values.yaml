@@ -1,0 +1,4 @@
+tempo:
+  metricsGenerator:
+    enabled: true
+    remoteWriteUrl: "http://__NS_PREFIX__-prometheus-kube-prometheus-prometheus.__NS_PREFIX__-observability.svc.cluster.local:9090/api/v1/write"

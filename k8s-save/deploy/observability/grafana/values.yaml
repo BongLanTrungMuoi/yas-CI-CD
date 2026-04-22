@@ -1,0 +1,8 @@
+hostname: grafana.yas.local.com
+grafana:
+  username: admin
+  password: admin
+postgresql:
+  url: postgresql.__NS_PREFIX__-postgres.svc.cluster.local:5432
+  username: yasadminuser
+  password: admin

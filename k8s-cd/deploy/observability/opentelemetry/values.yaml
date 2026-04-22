@@ -26,9 +26,9 @@ opentelemetryCollectorConfig:
     logging:
       verbosity: detailed
     loki:
-      endpoint: http://__NS_PREFIX__-loki-gateway.__NS_PREFIX__-observability.svc.cluster.local/loki/api/v1/push
+      endpoint: http://loki-gateway/loki/api/v1/push
     otlphttp:
-      endpoint: http://__NS_PREFIX__-tempo.__NS_PREFIX__-observability.svc.cluster.local:4318
+      endpoint: http://tempo:4318
   service:
     pipelines:
       logs:
