@@ -29,15 +29,15 @@ spec:
   ingress:
     enabled: true
     className: nginx
-  unsupported:
-    podTemplate:
-      spec:
-        volumes:
-          - name: yas-themes
-            configMap:
-              name: yas-themes-configmap
-        containers:
-          - name: keycloak
-            volumeMounts:
-              - name: yas-themes
-                mountPath: /opt/keycloak/providers
+#  unsupported:
+#    podTemplate:
+#      spec:
+#        volumes:
+#          - name: yas-themes
+#            configMap:
+#              name: yas-themes-configmap
+#        containers:
+#          - name: keycloak
+#            volumeMounts:
+#              - name: yas-themes
+#                mountPath: /opt/keycloak/providers

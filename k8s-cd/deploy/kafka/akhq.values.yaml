@@ -11,7 +11,7 @@ configuration:
         connect:
           - name: debezium-connect-cluster
             url: http://debezium-connect-cluster-connect-api:8083
-hostname: &hostname akhq-dev-13.yas.local.com
+hostname: &hostname akhq-dev-46.yas.local.com
 ingress:
   enabled: true
   ingressClassName: nginx

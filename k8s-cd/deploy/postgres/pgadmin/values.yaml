@@ -41,7 +41,7 @@ persistence:
 service:
   type: ClusterIP
   port: 80
-hostname: &hostname pgadmin-dev-13.yas.local.com
+hostname: &hostname pgadmin-dev-46.yas.local.com
 ingress:
   enabled: true
   className: "nginx"
