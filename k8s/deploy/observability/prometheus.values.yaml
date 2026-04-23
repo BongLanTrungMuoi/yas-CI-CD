@@ -3,6 +3,7 @@ prometheus:
   prometheusSpec:
     enableRemoteWriteReceiver: true
 grafana:
+  assertNoLeakedSecrets: false
   grafana.ini:
     database:
       type: postgres

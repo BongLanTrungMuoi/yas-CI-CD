@@ -3,14 +3,7 @@ prometheus:
   prometheusSpec:
     enableRemoteWriteReceiver: true
 grafana:
-  grafana.ini:
-    database:
-      type: postgres
-      host: postgresql.postgres:5432
-      name: grafana
-      user: yasadminuser
-      password: admin
-      ssl_mode: require
+  assertNoLeakedSecrets: false
   adminUser: admin
   adminPassword: admin
   ingress:

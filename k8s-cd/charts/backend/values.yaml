@@ -38,7 +38,7 @@ securityContext: {}
 logbackXmlPath: /opt/yas/config/logback.xml
 httpPort: 80
 metricPort: 8090
-databaseConnectionUrl: jdbc:postgresql://postgresql.postgres:5432
+databaseConnectionUrl: jdbc:postgresql://postgresql:5432
 databaseName: postgres
 
 deployment:
