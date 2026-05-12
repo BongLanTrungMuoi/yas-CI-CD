@@ -66,7 +66,7 @@ pipeline {
                                     if (mavenList.contains(name)) {
                                         echo "📦 Building JAR for ${name}..."
                                         docker.image(env.MAVEN_IMAGE).inside('-u root -v /var/lib/jenkins/.m2:/root/.m2') {
-                                            sh "mvn clean package -pl :${name} -am -DskipTests"
+                                            sh "mvn clean package -pl ${name} -am -DskipTests"
                                         }
                                     } else if (nodeList.contains(name)) {
                                         echo "📦 Building Node.js app for ${name}..."
