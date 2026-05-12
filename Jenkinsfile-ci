@@ -2,6 +2,7 @@ pipeline {
     agent any
 
     environment {
+        // Thông tin Docker Hub - Thay đổi đúng Username của bạn
         DOCKER_HUB_USER = 'melyen'
         DOCKER_CRED_ID  = 'dockerhub-token'
         MAVEN_IMAGE     = 'maven:3.9-eclipse-temurin-21-alpine'
@@ -12,11 +13,11 @@ pipeline {
         stage('1. Initialize & Identify') {
             steps {
                 script {
-                    // Lấy Short Commit ID làm Tag cho Image
+                    // 1. Lấy Short Commit ID làm Tag duy nhất
                     env.GIT_TAG = sh(script: "git rev-parse --short HEAD", returnStdout: true).trim()
                     echo "🚀 Starting build for Commit: ${env.GIT_TAG}"
                     
-                    // Xác định các thư mục ở root có thay đổi code
+                    // 2. Xác định các service có thay đổi code
                     def changedFiles = ""
                     try {
                         changedFiles = sh(script: "git diff --name-only HEAD~1 HEAD | cut -d/ -f1 | sort -u", returnStdout: true).trim()
@@ -44,10 +45,29 @@ pipeline {
             }
         }
 
-        stage('2. Build & Push Services') {
-            when {
-                expression { env.SERVICES_TO_BUILD != "" }
+        stage('2. Maven Build (JAR)') {
+            when { expression { env.SERVICES_TO_BUILD != "" } }
+            steps {
+                script {
+                    def serviceList = env.SERVICES_TO_BUILD.split(',')
+                    // Sử dụng dấu : và phân cách bằng dấu phẩy không khoảng trắng
+                    def mavenProjectList = serviceList.collect { ":${it}" }.join(',')
+                    
+                    echo "🛠️ Building JARs for: ${mavenProjectList}"
+                    sh """
+                        docker run --rm \
+                        -v /var/lib/jenkins/.m2:/root/.m2 \
+                        -v \$(pwd):/app \
+                        -w /app \
+                        maven:3.9-eclipse-temurin-21-alpine \
+                        mvn clean package -pl ${mavenProjectList} -am -DskipTests
+                    """
+                }
             }
+        }
+
+        stage('3. Docker Build & Push') {
+            when { expression { env.SERVICES_TO_BUILD != "" } }
             steps {
                 script {
                     def serviceList = env.SERVICES_TO_BUILD.split(',')
@@ -97,7 +117,6 @@ pipeline {
                                 }
                                 echo "✅ Finished ${name}"
                             }
-                            echo "--- Finished ${serviceName} ---"
                         }
                     }
                     
