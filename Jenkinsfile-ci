@@ -4,76 +4,114 @@ pipeline {
     environment {
         DOCKER_HUB_USER = 'melyen'
         DOCKER_CRED_ID  = 'dockerhub-token'
+        MAVEN_IMAGE     = 'maven:3.9-eclipse-temurin-21-alpine'
+        NODE_IMAGE      = 'node:20-alpine'
+    }
+
+    options {
+        timeout(time: 1, unit: 'HOURS')
+        timestamps()
+        buildDiscarder(logRotator(numToKeepStr: '10'))
+        ansiColor('xterm')
     }
 
     stages {
-        stage('1. Identify Changes') {
+        stage('1. Initialize & Identify') {
             steps {
                 script {
                     // Lấy Short Commit ID làm Tag cho Image
                     env.GIT_TAG = sh(script: "git rev-parse --short HEAD", returnStdout: true).trim()
+                    echo "🚀 Starting build for Commit: ${env.GIT_TAG}"
                     
-                    // Xác định các thư mục ở root có thay đổi code
+                    // Xác định các thư mục có thay đổi
                     def changedFiles = ""
                     try {
                         changedFiles = sh(script: "git diff --name-only HEAD~1 HEAD | cut -d/ -f1 | sort -u", returnStdout: true).trim()
                     } catch (Exception e) {
-                        echo "Warning: Could not get git diff (possibly first build). Checking all directories."
+                        echo "⚠️ Warning: Could not get git diff. Checking all directories."
                         changedFiles = sh(script: "ls -d */ | cut -f1 -d'/'", returnStdout: true).trim()
                     }
                     
-                    // Danh sách các service Maven và Node.js trong dự án
+                    // Định nghĩa danh sách Service
                     def mavenServices = ['cart', 'customer', 'inventory', 'product', 'order', 'media', 'payment', 'location', 'backoffice-bff', 'storefront-bff', 'search', 'tax', 'webhook', 'sampledata', 'recommendation', 'delivery', 'common-library']
                     def nodeServices = ['backoffice', 'storefront']
                     
                     def targetServices = changedFiles.split('\n').findAll { (mavenServices + nodeServices).contains(it) }
                     
+                    if (targetServices.isEmpty()) {
+                        currentBuild.result = 'SUCCESS'
+                        error "⏩ No valid services changed. Skipping build."
+                    }
+                    
                     env.SERVICES_TO_BUILD = targetServices.join(',')
-                    echo "Target services identified: ${env.SERVICES_TO_BUILD}"
+                    echo "🎯 Target services identified: ${env.SERVICES_TO_BUILD}"
+                    
+                    // Lưu lại danh sách cho các stage sau
+                    env.MAVEN_LIST = mavenServices.join(',')
+                    env.NODE_LIST = nodeServices.join(',')
                 }
             }
         }
 
         stage('2. Build & Push Services') {
-            when {
-                expression { env.SERVICES_TO_BUILD != "" }
-            }
             steps {
                 script {
                     def serviceList = env.SERVICES_TO_BUILD.split(',')
-                    def mavenServices = ['cart', 'customer', 'inventory', 'product', 'order', 'media', 'payment', 'location', 'backoffice-bff', 'storefront-bff', 'search', 'tax', 'webhook', 'sampledata', 'recommendation', 'delivery', 'common-library']
+                    def mavenList = env.MAVEN_LIST.split(',')
+                    def nodeList = env.NODE_LIST.split(',')
+                    
+                    def builds = [:]
                     
                     for (serviceName in serviceList) {
-                        stage("Service: ${serviceName}") {
-                            echo "--- Starting Build for Service: ${serviceName} ---"
-                            
-                            if (mavenServices.contains(serviceName)) {
-                                // A. Build JAR dùng Jenkins Docker DSL (Tự động mount workspace đúng cách)
-                                docker.image('maven:3.9-eclipse-temurin-21-alpine').inside('-u root -v /var/lib/jenkins/.m2:/root/.m2') {
-                                    sh "mvn clean package -pl ${serviceName} -am -DskipTests"
-                                }
-                            } else {
-                                echo "Skipping Maven build for non-Maven service: ${serviceName}"
-                                // Bạn có thể thêm logic build Docker cho Node.js ở đây nếu cần
-                            }
-
-                            // B. Build & Push Docker Image lên Docker Hub
-                            dir("${serviceName}") {
-                                def fullImageName = "${DOCKER_HUB_USER}/yas-${serviceName}:${env.GIT_TAG}"
-                                
-                                withCredentials([usernamePassword(credentialsId: "${DOCKER_CRED_ID}", passwordVariable: 'PASS', usernameVariable: 'USER')]) {
-                                    echo "🔨 Building Docker Image: ${fullImageName}"
-                                    sh "docker build -t ${fullImageName} ."
+                        def name = serviceName // Capture variable for closure
+                        builds["Service: ${name}"] = {
+                            node {
+                                stage("Build: ${name}") {
+                                    echo "🛠️ Processing ${name}..."
                                     
-                                    echo "🚀 Pushing Image to Docker Hub..."
-                                    sh "echo \$PASS | docker login -u \$USER --password-stdin"
-                                    sh "docker push ${fullImageName}"
-                                    sh "docker logout"
+                                    // 1. Compile (Maven or Node)
+                                    if (mavenList.contains(name)) {
+                                        echo "📦 Building JAR for ${name}..."
+                                        docker.image(env.MAVEN_IMAGE).inside('-u root -v /var/lib/jenkins/.m2:/root/.m2') {
+                                            sh "mvn clean package -pl :${name} -am -DskipTests"
+                                        }
+                                    } else if (nodeList.contains(name)) {
+                                        echo "📦 Building Node.js app for ${name}..."
+                                        docker.image(env.NODE_IMAGE).inside() {
+                                            dir(name) {
+                                                sh "npm install && npm run build --if-present"
+                                            }
+                                        }
+                                    }
+
+                                    // 2. Docker Build & Push
+                                    dir(name) {
+                                        def fullImageName = "${env.DOCKER_HUB_USER}/yas-${name}:${env.GIT_TAG}"
+                                        
+                                        withCredentials([usernamePassword(credentialsId: env.DOCKER_CRED_ID, passwordVariable: 'PASS', usernameVariable: 'USER')]) {
+                                            echo "🔨 Building Docker Image: ${fullImageName}"
+                                            sh "docker build -t ${fullImageName} ."
+                                            
+                                            echo "🚀 Pushing Image: ${fullImageName}"
+                                            sh "echo \$PASS | docker login -u \$USER --password-stdin"
+                                            sh "docker push ${fullImageName}"
+                                            
+                                            if (env.BRANCH_NAME == 'main') {
+                                                echo "🏷️ Tagging and pushing 'latest' for ${name}"
+                                                sh "docker tag ${fullImageName} ${env.DOCKER_HUB_USER}/yas-${name}:latest"
+                                                sh "docker push ${env.DOCKER_HUB_USER}/yas-${name}:latest"
+                                            }
+                                            sh "docker logout"
+                                        }
+                                    }
+                                    echo "✅ Finished ${name}"
                                 }
                             }
-                            echo "--- Finished ${serviceName} ---"
                         }
                     }
+                    
+                    // Chạy các build song song để tiết kiệm thời gian
+                    parallel builds
                 }
             }
         }
@@ -81,14 +119,19 @@ pipeline {
 
     post {
         always {
-            // Cập nhật trạng thái CI lên GitHub Checks
-            publishChecks name: 'Jenkins CI',
-                title: 'CI Status',
-                summary: "Built Services: ${env.SERVICES_TO_BUILD ?: 'None'}. Tag: ${env.GIT_TAG}",
-                conclusion: "${currentBuild.result ?: 'SUCCESS'}"
+            script {
+                def status = currentBuild.result ?: 'SUCCESS'
+                def color = (status == 'SUCCESS') ? '#36a64f' : '#ff0000'
+                
+                echo "🏁 CI Finished with status: ${status}"
+                
+                publishChecks name: 'Jenkins CI',
+                    title: "CI Status: ${status}",
+                    summary: "Built Services: ${env.SERVICES_TO_BUILD}. Tag: ${env.GIT_TAG}",
+                    conclusion: (status == 'SUCCESS') ? 'success' : 'failure'
+            }
         }
         cleanup {
-            // Dọn dẹp các workspace tạm nếu cần
             cleanWs()
         }
     }
