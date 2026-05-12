@@ -4,8 +4,9 @@ pipeline {
     environment {
         DOCKER_HUB_USER = 'melyen'
         DOCKER_CRED_ID  = 'dockerhub-token'
-        MAVEN_IMAGE     = 'maven:3.9-eclipse-temurin-21-alpine'
-        NODE_IMAGE      = 'node:20-alpine'
+        
+        // CẬP NHẬT: Đảm bảo tên ở đây khớp 100% với tên THƯ MỤC trên Git
+        VALID_SERVICES = 'cart,customer,inventory,product,order,identity,search,media,payment,location,backoffice-bff,backoffice-ui,storefront-bff,storefront-ui,tax,webhook,sampledata,recommendation,delivery'
     }
 
     stages {
@@ -16,11 +17,14 @@ pipeline {
                     echo "🚀 Starting build for Commit: ${env.GIT_TAG}"
                     
                     def changedFiles = ""
-                    try {
-                        changedFiles = sh(script: "git diff --name-only HEAD~1 HEAD | cut -d/ -f1 | sort -u", returnStdout: true).trim()
-                    } catch (Exception e) {
-                        echo "⚠️ Warning: Could not get git diff. Checking all directories."
-                        changedFiles = sh(script: "ls -d */ | cut -f1 -d'/'", returnStdout: true).trim()
+                    if (env.BEFORE_REVISION && env.AFTER_REVISION && env.BEFORE_REVISION != "null") {
+                        changedFiles = sh(script: "git diff --name-only ${env.BEFORE_REVISION} ${env.AFTER_REVISION} | cut -d/ -f1 | sort -u", returnStdout: true).trim()
+                    } else {
+                        try {
+                            changedFiles = sh(script: "git diff --name-only HEAD~1 HEAD | cut -d/ -f1 | sort -u", returnStdout: true).trim()
+                        } catch (e) {
+                            changedFiles = sh(script: "ls -d */ | cut -f1 -d'/'", returnStdout: true).trim()
+                        }
                     }
                     
                     def mavenServices = ['cart', 'customer', 'inventory', 'product', 'order', 'media', 'payment', 'location', 'backoffice-bff', 'storefront-bff', 'search', 'tax', 'webhook', 'sampledata', 'recommendation', 'delivery', 'common-library']
@@ -29,8 +33,8 @@ pipeline {
                     def targetServices = changedFiles.split('\n').findAll { (mavenServices + nodeServices).contains(it) }
                     
                     if (targetServices.isEmpty()) {
-                        echo "⏩ No valid services changed. Skipping build."
                         env.SERVICES_TO_BUILD = ""
+                        echo "⏩ No valid services changed."
                     } else {
                         env.SERVICES_TO_BUILD = targetServices.join(',')
                         echo "🎯 Target services identified: ${env.SERVICES_TO_BUILD}"
@@ -42,37 +46,39 @@ pipeline {
             }
         }
 
-        stage('2. Build & Push Services') {
-            when {
-                expression { env.SERVICES_TO_BUILD != "" }
+        stage('2. Maven Build (JAR)') {
+            when { expression { env.SERVICES_TO_BUILD != "" } }
+            steps {
+                script {
+                    def serviceList = env.SERVICES_TO_BUILD.split(',')
+                    // Sử dụng dấu ":" là chuẩn nhất cho Maven Artifact ID
+                    def mavenProjectList = serviceList.collect { ":${it}" }.join(',')
+                    
+                    echo "🛠️ Building JARs for: ${mavenProjectList}"
+                    
+                    sh """
+                        docker run --rm \
+                        -v /var/lib/jenkins/.m2:/root/.m2 \
+                        -v \$(pwd):/app \
+                        -w /app \
+                        maven:3.9-eclipse-temurin-21-alpine \
+                        /bin/sh -c "ls -la && mvn clean package -pl ${mavenProjectList} -am -DskipTests"
+                    """
+                }
             }
             steps {
                 script {
                     def serviceList = env.SERVICES_TO_BUILD.split(',')
-                    def mavenList = env.MAVEN_LIST.split(',')
-                    def nodeList = env.NODE_LIST.split(',')
-                    
-                    def builds = [:]
-                    
-                    for (serviceName in serviceList) {
-                        def name = serviceName
-                        builds["Service: ${name}"] = {
-                            // Chạy trực tiếp trong workspace hiện tại, không dùng 'node' mới để tránh mất code
-                            stage("Build: ${name}") {
-                                echo "🛠️ Processing ${name}..."
+                    docker.withRegistry('https://index.docker.io/v1/', "${DOCKER_CRED_ID}") {
+                        for (serviceName in serviceList) {
+                            dir("${serviceName}") {
+                                def fullImageName = "${DOCKER_HUB_USER}/yas-${serviceName}:${env.GIT_TAG}"
+                                echo "🔨 Building Docker Image: ${fullImageName}"
+                                def customImage = docker.build(fullImageName)
+                                customImage.push()
                                 
-                                if (mavenList.contains(name)) {
-                                    echo "📦 Building JAR for ${name}..."
-                                    docker.image(env.MAVEN_IMAGE).inside('-u root -v /var/lib/jenkins/.m2:/root/.m2') {
-                                        sh "mvn clean package -pl :${name} -am -DskipTests"
-                                    }
-                                } else if (nodeList.contains(name)) {
-                                    echo "📦 Building Node.js app for ${name}..."
-                                    docker.image(env.NODE_IMAGE).inside() {
-                                        dir(name) {
-                                            sh "npm install && npm run build --if-present"
-                                        }
-                                    }
+                                if (env.BRANCH_NAME == 'main') {
+                                    customImage.push('latest')
                                 }
 
                                 dir(name) {
@@ -135,20 +141,8 @@ pipeline {
 
     post {
         always {
-            script {
-                def status = currentBuild.result ?: 'SUCCESS'
-                echo "🏁 CI Finished with status: ${status}"
-                
-                // Fix conclusion enum case: SUCCESS, FAILURE, NEUTRAL, etc.
-                def checkConclusion = (status == 'SUCCESS') ? 'SUCCESS' : 'FAILURE'
-                
-                publishChecks name: 'Jenkins CI',
-                    title: "CI Status: ${status}",
-                    summary: "Built Services: ${env.SERVICES_TO_BUILD}. Tag: ${env.GIT_TAG}",
-                    conclusion: checkConclusion
-            }
-        }
-        cleanup {
+            // Chỉ chạy publishChecks nếu bạn đã sửa xong lỗi 403 GitHub App
+            // publishChecks name: 'Jenkins CI', title: 'CI Status', conclusion: "${currentBuild.result}"
             cleanWs()
         }
     }
