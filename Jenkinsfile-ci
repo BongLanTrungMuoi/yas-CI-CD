@@ -52,17 +52,18 @@ pipeline {
             steps {
                 script {
                     def serviceList = env.SERVICES_TO_BUILD.split(',')
-                    // Gom tất cả các service vào 1 lệnh Maven để tối ưu thời gian (chỉ khởi động container 1 lần)
-                    def mavenProjectList = serviceList.collect { "-pl ${it}" }.join(' ')
+                    // Thêm dấu ":" trước mỗi service để Maven nhận diện chính xác Artifact ID
+                    def mavenProjectList = serviceList.collect { ":${it}" }.join(',')
                     
-                    echo "🛠️ Building JARs for: ${mavenProjectList}"
+                    echo "🛠️ Building JARs for modules: ${mavenProjectList}"
+                    
                     sh """
                         docker run --rm \
                         -v /var/lib/jenkins/.m2:/root/.m2 \
                         -v \$(pwd):/app \
                         -w /app \
-                        maven:3.9-eclipse-temurin-25-alpine \
-                        mvn clean package ${mavenProjectList} -am -DskipTests
+                        maven:3.9-eclipse-temurin-21-alpine \
+                        mvn clean package -pl ${mavenProjectList} -am -DskipTests
                     """
                 }
             }
