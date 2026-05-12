@@ -1,0 +1,197 @@
+# Edge services PeerAuthentication PERMISSIVE.
+#
+# Tại sao: namespace-level PeerAuthentication (file 01) set STRICT cho toàn yas-1.
+# Browser → nginx Ingress (KHÔNG có Istio sidecar) → service bị STRICT reject ở TLS
+# handshake → web app không hoạt động.
+#
+# Fix: override STRICT thành PERMISSIVE cho từng workload "edge" (nhận traffic từ Ingress).
+# PERMISSIVE = accept cả plaintext (từ Ingress) lẫn mTLS (in-mesh).
+#
+# Limitation: Istio API v1 cho PeerAuthentication chỉ support `matchLabels`, KHÔNG
+# support `matchExpressions` → phải khai báo 5 PeerAuthentication riêng.
+#
+# mTLS service-to-service trong mesh (bff→backend) vẫn STRICT theo namespace policy.
+---
+apiVersion: security.istio.io/v1
+kind: PeerAuthentication
+metadata:
+  name: storefront-ui-permissive
+  namespace: yas-1
+spec:
+  selector: { matchLabels: { app.kubernetes.io/name: storefront-ui } }
+  mtls: { mode: PERMISSIVE }
+---
+apiVersion: security.istio.io/v1
+kind: PeerAuthentication
+metadata:
+  name: backoffice-ui-permissive
+  namespace: yas-1
+spec:
+  selector: { matchLabels: { app.kubernetes.io/name: backoffice-ui } }
+  mtls: { mode: PERMISSIVE }
+---
+apiVersion: security.istio.io/v1
+kind: PeerAuthentication
+metadata:
+  name: storefront-bff-permissive
+  namespace: yas-1
+spec:
+  selector: { matchLabels: { app.kubernetes.io/name: storefront-bff } }
+  mtls: { mode: PERMISSIVE }
+---
+apiVersion: security.istio.io/v1
+kind: PeerAuthentication
+metadata:
+  name: backoffice-bff-permissive
+  namespace: yas-1
+spec:
+  selector: { matchLabels: { app.kubernetes.io/name: backoffice-bff } }
+  mtls: { mode: PERMISSIVE }
+---
+apiVersion: security.istio.io/v1
+kind: PeerAuthentication
+metadata:
+  name: swagger-ui-permissive
+  namespace: yas-1
+spec:
+  selector: { matchLabels: { app.kubernetes.io/name: swagger-ui } }
+  mtls: { mode: PERMISSIVE }
+---
+# Keycloak edge: browser + BFF (qua nginx Ingress, plaintext) cần truy cập.
+# Keycloak operator label pod với `app=keycloak`, không phải app.kubernetes.io/name.
+apiVersion: security.istio.io/v1
+kind: PeerAuthentication
+metadata:
+  name: keycloak-permissive
+  namespace: yas-1
+spec:
+  selector: { matchLabels: { app: keycloak } }
+  mtls: { mode: PERMISSIVE }
+---
+# AuthZ rule cho phép nginx-ingress → Keycloak (browser login flow + BFF discovery fetch).
+apiVersion: security.istio.io/v1
+kind: AuthorizationPolicy
+metadata:
+  name: allow-ingress-to-keycloak
+  namespace: yas-1
+spec:
+  selector: { matchLabels: { app: keycloak } }
+  action: ALLOW
+  rules:
+    - from:
+        - source:
+            # Allow cả 2 ingress path:
+            # - "ingress-nginx" cho fallback nginx Ingress (legacy, có thể vẫn dùng)
+            # - "istio-system" cho Istio Ingress Gateway (file 08, recommended)
+            namespaces: ["ingress-nginx", "istio-system"]
+---
+# AuthZ rule cho phép storefront-bff + backoffice-bff → Keycloak (in-mesh, mTLS).
+apiVersion: security.istio.io/v1
+kind: AuthorizationPolicy
+metadata:
+  name: allow-bff-to-keycloak
+  namespace: yas-1
+spec:
+  selector: { matchLabels: { app: keycloak } }
+  action: ALLOW
+  rules:
+    - from:
+        - source:
+            principals:
+              - cluster.local/ns/yas-1/sa/storefront-bff
+              - cluster.local/ns/yas-1/sa/backoffice-bff
+---
+# AuthZ rules cho từng kết nối — Istio API yêu cầu matchLabels (1 service / rule).
+# storefront-bff → mọi backend microservice
+apiVersion: security.istio.io/v1
+kind: AuthorizationPolicy
+metadata:
+  name: allow-bff-to-cart
+  namespace: yas-1
+spec:
+  selector: { matchLabels: { app.kubernetes.io/name: cart } }
+  action: ALLOW
+  rules:
+    - from:
+        - source:
+            principals: ["cluster.local/ns/yas-1/sa/storefront-bff", "cluster.local/ns/yas-1/sa/backoffice-bff"]
+---
+apiVersion: security.istio.io/v1
+kind: AuthorizationPolicy
+metadata:
+  name: allow-bff-to-product
+  namespace: yas-1
+spec:
+  selector: { matchLabels: { app.kubernetes.io/name: product } }
+  action: ALLOW
+  rules:
+    - from:
+        - source:
+            principals: ["cluster.local/ns/yas-1/sa/storefront-bff", "cluster.local/ns/yas-1/sa/backoffice-bff"]
+---
+apiVersion: security.istio.io/v1
+kind: AuthorizationPolicy
+metadata:
+  name: allow-bff-to-customer
+  namespace: yas-1
+spec:
+  selector: { matchLabels: { app.kubernetes.io/name: customer } }
+  action: ALLOW
+  rules:
+    - from:
+        - source:
+            principals: ["cluster.local/ns/yas-1/sa/storefront-bff", "cluster.local/ns/yas-1/sa/backoffice-bff"]
+---
+# BFF → sampledata: cho UI button "Generate sample data" trigger POST /api/sampledata/.../sampledata
+apiVersion: security.istio.io/v1
+kind: AuthorizationPolicy
+metadata:
+  name: allow-bff-to-sampledata
+  namespace: yas-1
+spec:
+  selector: { matchLabels: { app.kubernetes.io/name: sampledata } }
+  action: ALLOW
+  rules:
+    - from:
+        - source:
+            principals: ["cluster.local/ns/yas-1/sa/storefront-bff", "cluster.local/ns/yas-1/sa/backoffice-bff"]
+---
+# AuthZ rule cho phép browser (qua nginx Ingress, plaintext) gọi UI/BFF.
+# nginx ingress KHÔNG có sidecar → match bằng `source.namespaces`.
+apiVersion: security.istio.io/v1
+kind: AuthorizationPolicy
+metadata:
+  name: allow-ingress-to-storefront-ui
+  namespace: yas-1
+spec:
+  selector: { matchLabels: { app.kubernetes.io/name: storefront-ui } }
+  action: ALLOW
+  rules:
+    # Source 1: từ ingress/gateway namespace (browser flow tới UI assets)
+    - from:
+        - source:
+            # - "ingress-nginx" cho fallback nginx Ingress (legacy, có thể vẫn dùng)
+            # - "istio-system" cho Istio Ingress Gateway (file 08, recommended)
+            namespaces: ["ingress-nginx", "istio-system"]
+    # Source 2: từ BFF (Spring Cloud Gateway proxy / → storefront-ui:3000 cho rendering page)
+    - from:
+        - source:
+            principals:
+              - cluster.local/ns/yas-1/sa/storefront-bff
+              - cluster.local/ns/yas-1/sa/backoffice-bff
+---
+apiVersion: security.istio.io/v1
+kind: AuthorizationPolicy
+metadata:
+  name: allow-ingress-to-storefront-bff
+  namespace: yas-1
+spec:
+  selector: { matchLabels: { app.kubernetes.io/name: storefront-bff } }
+  action: ALLOW
+  rules:
+    - from:
+        - source:
+            # Allow cả 2 ingress path:
+            # - "ingress-nginx" cho fallback nginx Ingress (legacy, có thể vẫn dùng)
+            # - "istio-system" cho Istio Ingress Gateway (file 08, recommended)
+            namespaces: ["ingress-nginx", "istio-system"]

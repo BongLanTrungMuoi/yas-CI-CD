@@ -20,6 +20,13 @@
 *.rar
 target
 
+# SSH keys
+*.pem
+*.key
+
+# Claude Code local config
+.claude/
+
 ### IntelliJ IDEA ###
 .idea
 

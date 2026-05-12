@@ -1,0 +1,42 @@
+# Circuit Breaker (DestinationRule) — chống retry storm "cộng hưởng".
+#
+# Tình huống: caller sidecar có retry policy 4 attempts. Khi upstream tiếp tục
+# trả 5xx kéo dài → mỗi request gây 4× inbound vào pod upstream → CPU/queue spike
+# → upstream càng chậm → caller retry càng nhiều → cộng hưởng.
+#
+# Fix: Envoy outlier detection theo dõi rate lỗi của từng host (pod). Sau
+# `consecutive5xxErrors` lần liên tiếp, pod bị "eject" khỏi load-balancer pool
+# trong `baseEjectionTime`. Trong thời gian eject, KHÔNG có request mới gửi đến
+# → upstream được "thở" → tự phục hồi.
+#
+# `connectionPool` đặt giới hạn tài nguyên: nếu queue pending vượt
+# `http1MaxPendingRequests`, sidecar trả 503 lập tức cho client (KHÔNG bắn lên upstream)
+# → bảo vệ upstream khỏi bị tràn.
+#
+# Đây là pattern production-standard kết hợp với retry: retry để chịu transient
+# failure, circuit breaker để dừng khi failure không transient.
+apiVersion: networking.istio.io/v1beta1
+kind: DestinationRule
+metadata:
+  name: httpbin-circuit-breaker
+  namespace: yas-1
+spec:
+  host: httpbin.yas-1.svc.cluster.local
+  trafficPolicy:
+    # mTLS giữ STRICT (chart PeerAuthentication đã enforce ở namespace level,
+    # nhưng khai báo lại ở DR để phòng auto-mTLS bị override khi có trafficPolicy)
+    tls:
+      mode: ISTIO_MUTUAL
+    connectionPool:
+      tcp:
+        maxConnections: 50           # tối đa 50 TCP conn đồng thời tới upstream
+      http:
+        http1MaxPendingRequests: 10  # tối đa 10 request queued chờ conn rảnh
+        http2MaxRequests: 100        # tối đa 100 request đồng thời (HTTP/2)
+        maxRequestsPerConnection: 10 # mỗi conn handle tối đa 10 req trước khi close
+    outlierDetection:
+      consecutive5xxErrors: 5        # 5 lỗi 5xx liên tiếp → eject
+      interval: 30s                  # scan eligibility mỗi 30s
+      baseEjectionTime: 60s          # eject 60s; nếu eject lần 2 thì 120s, etc.
+      maxEjectionPercent: 50         # tối đa eject 50% endpoints (không kill toàn cụm)
+      minHealthPercent: 50           # giữ tối thiểu 50% endpoints healthy

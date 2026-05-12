@@ -1,0 +1,21 @@
+# Pod tiện ích để curl test các service trong mesh.
+# Service account riêng để dễ phân biệt với các service trong AuthorizationPolicy.
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: curl-client
+  namespace: yas-1
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: curl-client
+  namespace: yas-1
+  labels:
+    app: curl-client
+spec:
+  serviceAccountName: curl-client
+  containers:
+    - name: curl
+      image: curlimages/curl:8.10.1
+      command: ["sleep", "infinity"]

@@ -1,0 +1,81 @@
+# === Default deny-all cho namespace yas-1 ===
+# Khi PeerAuthentication STRICT đã bật + chính sách deny-all, mọi request
+# không khớp với ALLOW policy nào sẽ trả 403 (RBAC: access denied).
+apiVersion: security.istio.io/v1beta1
+kind: AuthorizationPolicy
+metadata:
+  name: default-deny-all
+  namespace: yas-1
+spec: {}
+---
+# === ALLOW: traffic từ istio-system (ingress gateway / kiali / prometheus) ===
+apiVersion: security.istio.io/v1beta1
+kind: AuthorizationPolicy
+metadata:
+  name: allow-from-istio-system
+  namespace: yas-1
+spec:
+  action: ALLOW
+  rules:
+    - from:
+        - source:
+            namespaces: ["istio-system"]
+---
+# === ALLOW: curl-client → cart (entry point của demo) ===
+apiVersion: security.istio.io/v1beta1
+kind: AuthorizationPolicy
+metadata:
+  name: allow-curlclient-to-cart
+  namespace: yas-1
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: cart
+  action: ALLOW
+  rules:
+    - from:
+        - source:
+            principals: ["cluster.local/ns/yas-1/sa/curl-client"]
+---
+# === ALLOW: cart → product (downstream) ===
+apiVersion: security.istio.io/v1beta1
+kind: AuthorizationPolicy
+metadata:
+  name: allow-cart-to-product
+  namespace: yas-1
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: product
+  action: ALLOW
+  rules:
+    - from:
+        - source:
+            principals: ["cluster.local/ns/yas-1/sa/cart"]
+---
+# === ALLOW: Spring app + data-plane components → data layer ports ===
+# Cần thiết để các Spring Boot service connect Postgres/Redis/Kafka/ES/Keycloak.
+#
+# Tightening (defense in depth): rule này narrow theo 2 chiều
+#   1. `to.operation.ports` chỉ lọc cổng data-layer thật (5432 postgres, 6379 redis,
+#      9092 kafka, 9200 ES, 8080 keycloak, 9000 backstage) — không bao gồm port 80
+#      của Spring app, vì vậy không vô tình bypass AuthZ giữa app-to-app.
+#   2. `notPrincipals` loại 2 utility SA (curl-client, httpbin) — vì 2 pod này là
+#      test fixture, không có business logic cần truy cập data layer.
+apiVersion: security.istio.io/v1beta1
+kind: AuthorizationPolicy
+metadata:
+  name: allow-internal-data-layer
+  namespace: yas-1
+spec:
+  action: ALLOW
+  rules:
+    - from:
+        - source:
+            namespaces: ["yas-1"]
+            notPrincipals:
+              - "cluster.local/ns/yas-1/sa/curl-client"
+              - "cluster.local/ns/yas-1/sa/httpbin"
+      to:
+        - operation:
+            ports: ["5432", "6379", "9092", "9200", "8080", "9000"]

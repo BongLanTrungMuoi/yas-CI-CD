@@ -1,0 +1,70 @@
+# Retry policy + fault injection cho cart và product:
+# - Tự động retry 3 lần nếu downstream trả 5xx, connect-failure, hoặc refused-stream
+# - Mỗi attempt timeout 2s, tổng timeout request = 8s
+# - Header `x-envoy-attempt-count` trong response chứa số lần đã gọi thực
+# - Để DEMO retry: gửi request kèm header `x-chaos: fail` → Istio inject 500
+#   ở phía caller-side, retry policy sẽ thử lại 3 lần và trả 500 cuối cùng.
+apiVersion: networking.istio.io/v1beta1
+kind: VirtualService
+metadata:
+  name: cart-mesh
+  namespace: yas-1
+spec:
+  hosts:
+    - cart.yas-1.svc.cluster.local
+    - cart
+  http:
+    - match:
+        - headers:
+            x-chaos:
+              exact: fail
+      fault:
+        abort:
+          httpStatus: 500
+          percentage:
+            value: 100
+      retries:
+        attempts: 3
+        # 5s thay vì 2s: Spring Boot trên VM CPU bão hòa (cold JDBC pool, Hibernate
+        # metadata fetch) có p95 latency >2s ngay cả khi healthy → tránh retry storm.
+        perTryTimeout: 5s
+        # retryOn:
+        #   - 5xx             → mọi 5xx (giữ vì đề bài yêu cầu "retry trên 500")
+        #   - gateway-error   → 502/503/504 (cover thêm proxy-layer errors)
+        #   - connect-failure → upstream TCP connect fail (pod chưa Ready)
+        #   - refused-stream  → upstream HTTP/2 RST_STREAM (pod đang shutdown)
+        #   - reset           → upstream RST (network glitch)
+        retryOn: 5xx,gateway-error,connect-failure,refused-stream,reset
+      route:
+        - destination:
+            host: cart.yas-1.svc.cluster.local
+      timeout: 8s
+    - retries:
+        attempts: 3
+        # 5s > p99 latency Spring Boot trên VM share CPU
+        perTryTimeout: 5s
+        retryOn: 5xx,gateway-error,connect-failure,refused-stream,reset
+      route:
+        - destination:
+            host: cart.yas-1.svc.cluster.local
+      timeout: 8s
+---
+apiVersion: networking.istio.io/v1beta1
+kind: VirtualService
+metadata:
+  name: product-mesh
+  namespace: yas-1
+spec:
+  hosts:
+    - product.yas-1.svc.cluster.local
+    - product
+  http:
+    - retries:
+        attempts: 3
+        # 5s > p99 latency Spring Boot trên VM share CPU
+        perTryTimeout: 5s
+        retryOn: 5xx,gateway-error,connect-failure,refused-stream,reset
+      route:
+        - destination:
+            host: product.yas-1.svc.cluster.local
+      timeout: 8s

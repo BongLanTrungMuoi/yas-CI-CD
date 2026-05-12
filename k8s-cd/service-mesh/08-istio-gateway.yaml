@@ -1,0 +1,132 @@
+# Istio Ingress Gateway — replace nginx Ingress.
+#
+# Tại sao: Gateway pod (istio-ingressgateway, namespace istio-system) là Envoy có
+# Istio identity. Khi gateway gọi service in-mesh → mTLS native, không bị STRICT reject.
+# → Bỏ workaround PeerAuthentication PERMISSIVE cho edge services.
+#
+# Architecture:
+#   Browser → host:80 (socat tunnel) → istio-ingressgateway NodePort → Gateway pod
+#     → VirtualService route theo Host header → backend service in mesh (mTLS auto)
+#
+# Đây là pattern Istio-native production-recommended (post nginx-ingress EOL 2026-03-31,
+# cộng đồng migrate sang Gateway API + Istio implementation).
+apiVersion: networking.istio.io/v1
+kind: Gateway
+metadata:
+  name: yas-gateway
+  namespace: yas-1
+spec:
+  selector:
+    istio: ingressgateway     # match istio-ingressgateway pod ở istio-system
+  servers:
+    - port:
+        number: 80
+        name: http
+        protocol: HTTP
+      hosts:
+        - "storefront-dev-1.yas.local.com"
+        - "backoffice-dev-1.yas.local.com"
+        - "api-dev-1.yas.local.com"
+        - "identity-dev-1.yas.local.com"
+        - "akhq-dev-1.yas.local.com"
+        - "kibana-dev-1.yas.local.com"
+        - "pgadmin-dev-1.yas.local.com"
+---
+# VirtualService route theo Host header → backend service in mesh.
+apiVersion: networking.istio.io/v1
+kind: VirtualService
+metadata:
+  name: storefront-route
+  namespace: yas-1
+spec:
+  hosts: ["storefront-dev-1.yas.local.com"]
+  gateways: [yas-gateway]
+  http:
+    - route:
+        - destination:
+            host: storefront-bff.yas-1.svc.cluster.local
+            port: { number: 80 }
+---
+apiVersion: networking.istio.io/v1
+kind: VirtualService
+metadata:
+  name: backoffice-route
+  namespace: yas-1
+spec:
+  hosts: ["backoffice-dev-1.yas.local.com"]
+  gateways: [yas-gateway]
+  http:
+    - route:
+        - destination:
+            host: backoffice-bff.yas-1.svc.cluster.local
+            port: { number: 80 }
+---
+apiVersion: networking.istio.io/v1
+kind: VirtualService
+metadata:
+  name: api-route
+  namespace: yas-1
+spec:
+  hosts: ["api-dev-1.yas.local.com"]
+  gateways: [yas-gateway]
+  http:
+    - route:
+        - destination:
+            host: swagger-ui.yas-1.svc.cluster.local
+            port: { number: 80 }
+---
+apiVersion: networking.istio.io/v1
+kind: VirtualService
+metadata:
+  name: identity-route
+  namespace: yas-1
+spec:
+  hosts: ["identity-dev-1.yas.local.com"]
+  gateways: [yas-gateway]
+  http:
+    - route:
+        - destination:
+            host: keycloak-service.yas-1.svc.cluster.local
+            port: { number: 8080 }
+---
+apiVersion: networking.istio.io/v1
+kind: VirtualService
+metadata:
+  name: akhq-route
+  namespace: yas-1
+spec:
+  hosts: ["akhq-dev-1.yas.local.com"]
+  gateways: [yas-gateway]
+  http:
+    - route:
+        - destination:
+            host: akhq.yas-1.svc.cluster.local
+            port: { number: 80 }
+---
+apiVersion: networking.istio.io/v1
+kind: VirtualService
+metadata:
+  name: kibana-route
+  namespace: yas-1
+spec:
+  hosts: ["kibana-dev-1.yas.local.com"]
+  gateways: [yas-gateway]
+  http:
+    - route:
+        - destination:
+            host: kibana-kb-http.yas-1.svc.cluster.local
+            port: { number: 5601 }
+---
+apiVersion: networking.istio.io/v1
+kind: VirtualService
+metadata:
+  name: pgadmin-route
+  namespace: yas-1
+spec:
+  hosts: ["pgadmin-dev-1.yas.local.com"]
+  gateways: [yas-gateway]
+  http:
+    - route:
+        - destination:
+            host: pgadmin.yas-1.svc.cluster.local
+            port: { number: 80 }
