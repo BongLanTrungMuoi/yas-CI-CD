@@ -2,75 +2,95 @@ pipeline {
     agent any
 
     environment {
+        // Thông tin Docker Hub - Thay đổi đúng Username của bạn
         DOCKER_HUB_USER = 'melyen'
         DOCKER_CRED_ID  = 'dockerhub-token'
+        
+        // Danh sách các service hợp lệ trong dự án monorepo
+        VALID_SERVICES = 'cart,customer,inventory,product,order,identity,search,media,payment,location,backoffice,storefront'
     }
 
     stages {
         stage('1. Identify Changes') {
             steps {
                 script {
-                    // Lấy Short Commit ID làm Tag cho Image
+                    // 1. Lấy Short Commit ID làm Tag duy nhất
                     env.GIT_TAG = sh(script: "git rev-parse --short HEAD", returnStdout: true).trim()
                     
-                    // Xác định các thư mục ở root có thay đổi code
+                    // 2. Xác định các service có thay đổi code
                     def changedFiles = ""
-                    try {
-                        changedFiles = sh(script: "git diff --name-only HEAD~1 HEAD | cut -d/ -f1 | sort -u", returnStdout: true).trim()
-                    } catch (Exception e) {
-                        echo "Warning: Could not get git diff (possibly first build). Checking all directories."
-                        changedFiles = sh(script: "ls -d */ | cut -f1 -d'/'", returnStdout: true).trim()
+                    // Kiểm tra xem có mã Revision từ Webhook không để tránh lỗi 'null'
+                    if (env.BEFORE_REVISION && env.AFTER_REVISION && env.BEFORE_REVISION != "null") {
+                        echo "🔍 Detecting changes between ${env.BEFORE_REVISION} and ${env.AFTER_REVISION}"
+                        changedFiles = sh(script: "git diff --name-only ${env.BEFORE_REVISION} ${env.AFTER_REVISION} | cut -d/ -f1 | sort -u", returnStdout: true).trim()
+                    } else {
+                        echo "⚠️ No revision info found. Falling back to HEAD~1..."
+                        try {
+                            changedFiles = sh(script: "git diff --name-only HEAD~1 HEAD | cut -d/ -f1 | sort -u", returnStdout: true).trim()
+                        } catch (e) {
+                            echo "🆕 First build or no history. Checking all directories."
+                            changedFiles = sh(script: "ls -d */ | cut -f1 -d'/'", returnStdout: true).trim()
+                        }
                     }
                     
-                    // Danh sách các service hợp lệ trong dự án yas của bạn
-                    def validServices = ['cart', 'customer', 'inventory', 'product', 'order', 'identity', 'search', 'media', 'payment', 'location', 'backoffice', 'storefront']
+                    def validList = env.VALID_SERVICES.split(',')
+                    def targetServices = changedFiles.split('\n').findAll { it && validList.contains(it) }
                     
-                    def targetServices = changedFiles.split('\n').findAll { validServices.contains(it) }
-                    
-                    env.SERVICES_TO_BUILD = targetServices.join(',')
-                    echo "Target services identified: ${env.SERVICES_TO_BUILD}"
+                    if (targetServices.isEmpty()) {
+                        env.SERVICES_TO_BUILD = ""
+                        echo "⏩ No valid services changed. Skipping build."
+                    } else {
+                        env.SERVICES_TO_BUILD = targetServices.join(',')
+                        echo "🚀 Target services identified: ${env.SERVICES_TO_BUILD}"
+                    }
                 }
             }
         }
 
-        stage('2. Build & Push Services') {
-            when {
-                expression { env.SERVICES_TO_BUILD != "" }
+        stage('2. Maven Build (JAR)') {
+            when { expression { env.SERVICES_TO_BUILD != "" } }
+            steps {
+                script {
+                    def serviceList = env.SERVICES_TO_BUILD.split(',')
+                    // Sử dụng dấu : và phân cách bằng dấu phẩy không khoảng trắng
+                    def mavenProjectList = serviceList.collect { ":${it}" }.join(',')
+                    
+                    echo "🛠️ Building JARs for: ${mavenProjectList}"
+                    sh """
+                        docker run --rm \
+                        -v /var/lib/jenkins/.m2:/root/.m2 \
+                        -v \$(pwd):/app \
+                        -w /app \
+                        maven:3.9-eclipse-temurin-21-alpine \
+                        mvn clean package -pl ${mavenProjectList} -am -DskipTests
+                    """
+                }
             }
+        }
+
+        stage('3. Docker Build & Push') {
+            when { expression { env.SERVICES_TO_BUILD != "" } }
             steps {
                 script {
                     def serviceList = env.SERVICES_TO_BUILD.split(',')
                     
-                    for (serviceName in serviceList) {
-                        stage("Service: ${serviceName}") {
-                            echo "--- Starting Build for Service: ${serviceName} ---"
-                            
-                            // A. Build JAR dùng Docker Maven (Sử dụng JDK 25 để khớp với code)
-                            // Lưu ý: Volume /var/lib/jenkins/.m2 giúp cache lại thư viện để build nhanh hơn
-                            sh """
-                                docker run --rm \
-                                -v /var/lib/jenkins/.m2:/root/.m2 \
-                                -v \$(pwd):/app \
-                                -w /app \
-                                maven:3.9-eclipse-temurin-25-alpine \
-                                mvn clean package -pl ${serviceName} -am -DskipTests
-                            """
-
-                            // B. Build & Push Docker Image lên Docker Hub
+                    // Sử dụng Docker Pipeline Plugin để quản lý Login/Logout tự động và bảo mật
+                    docker.withRegistry('https://index.docker.io/v1/', "${DOCKER_CRED_ID}") {
+                        for (serviceName in serviceList) {
                             dir("${serviceName}") {
                                 def fullImageName = "${DOCKER_HUB_USER}/yas-${serviceName}:${env.GIT_TAG}"
                                 
-                                withCredentials([usernamePassword(credentialsId: "${DOCKER_CRED_ID}", passwordVariable: 'PASS', usernameVariable: 'USER')]) {
-                                    echo "🔨 Building Docker Image: ${fullImageName}"
-                                    sh "docker build -t ${fullImageName} ."
-                                    
-                                    echo "🚀 Pushing Image to Docker Hub..."
-                                    sh "echo \$PASS | docker login -u \$USER --password-stdin"
-                                    sh "docker push ${fullImageName}"
-                                    sh "docker logout"
+                                echo "🔨 Building Docker Image: ${fullImageName}"
+                                def customImage = docker.build(fullImageName)
+                                
+                                echo "🚀 Pushing Image to Docker Hub..."
+                                customImage.push()
+                                
+                                // Nếu là branch main, đẩy thêm tag 'latest'
+                                if (env.BRANCH_NAME == 'main') {
+                                    customImage.push('latest')
                                 }
                             }
-                            echo "--- Finished ${serviceName} ---"
                         }
                     }
                 }
@@ -79,15 +99,19 @@ pipeline {
     }
 
     post {
-        always {
-            // Cập nhật trạng thái CI lên GitHub Checks
+        success {
             publishChecks name: 'Jenkins CI',
                 title: 'CI Status',
-                summary: "Built Services: ${env.SERVICES_TO_BUILD ?: 'None'}. Tag: ${env.GIT_TAG}",
-                conclusion: "${currentBuild.result ?: 'SUCCESS'}"
+                summary: "✅ Built: ${env.SERVICES_TO_BUILD}. Tag: ${env.GIT_TAG}",
+                conclusion: 'SUCCESS'
         }
-        cleanup {
-            // Dọn dẹp các workspace tạm nếu cần
+        failure {
+            publishChecks name: 'Jenkins CI',
+                title: 'CI Status',
+                summary: "❌ Build failed for: ${env.SERVICES_TO_BUILD}",
+                conclusion: 'FAILURE'
+        }
+        always {
             cleanWs()
         }
     }
