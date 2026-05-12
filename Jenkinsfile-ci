@@ -12,11 +12,9 @@ pipeline {
         stage('1. Initialize & Identify') {
             steps {
                 script {
-                    // Lấy Short Commit ID làm Tag cho Image
                     env.GIT_TAG = sh(script: "git rev-parse --short HEAD", returnStdout: true).trim()
                     echo "🚀 Starting build for Commit: ${env.GIT_TAG}"
                     
-                    // Xác định các thư mục có thay đổi
                     def changedFiles = ""
                     try {
                         changedFiles = sh(script: "git diff --name-only HEAD~1 HEAD | cut -d/ -f1 | sort -u", returnStdout: true).trim()
@@ -25,21 +23,19 @@ pipeline {
                         changedFiles = sh(script: "ls -d */ | cut -f1 -d'/'", returnStdout: true).trim()
                     }
                     
-                    // Định nghĩa danh sách Service
                     def mavenServices = ['cart', 'customer', 'inventory', 'product', 'order', 'media', 'payment', 'location', 'backoffice-bff', 'storefront-bff', 'search', 'tax', 'webhook', 'sampledata', 'recommendation', 'delivery', 'common-library']
                     def nodeServices = ['backoffice', 'storefront']
                     
                     def targetServices = changedFiles.split('\n').findAll { (mavenServices + nodeServices).contains(it) }
                     
                     if (targetServices.isEmpty()) {
-                        currentBuild.result = 'SUCCESS'
-                        error "⏩ No valid services changed. Skipping build."
+                        echo "⏩ No valid services changed. Skipping build."
+                        env.SERVICES_TO_BUILD = ""
+                    } else {
+                        env.SERVICES_TO_BUILD = targetServices.join(',')
+                        echo "🎯 Target services identified: ${env.SERVICES_TO_BUILD}"
                     }
                     
-                    env.SERVICES_TO_BUILD = targetServices.join(',')
-                    echo "🎯 Target services identified: ${env.SERVICES_TO_BUILD}"
-                    
-                    // Lưu lại danh sách cho các stage sau
                     env.MAVEN_LIST = mavenServices.join(',')
                     env.NODE_LIST = nodeServices.join(',')
                 }
@@ -47,6 +43,9 @@ pipeline {
         }
 
         stage('2. Build & Push Services') {
+            when {
+                expression { env.SERVICES_TO_BUILD != "" }
+            }
             steps {
                 script {
                     def serviceList = env.SERVICES_TO_BUILD.split(',')
@@ -56,54 +55,49 @@ pipeline {
                     def builds = [:]
                     
                     for (serviceName in serviceList) {
-                        def name = serviceName // Capture variable for closure
+                        def name = serviceName
                         builds["Service: ${name}"] = {
-                            node {
-                                stage("Build: ${name}") {
-                                    echo "🛠️ Processing ${name}..."
-                                    
-                                    // 1. Compile (Maven or Node)
-                                    if (mavenList.contains(name)) {
-                                        echo "📦 Building JAR for ${name}..."
-                                        docker.image(env.MAVEN_IMAGE).inside('-u root -v /var/lib/jenkins/.m2:/root/.m2') {
-                                            sh "mvn clean package -pl ${name} -am -DskipTests"
-                                        }
-                                    } else if (nodeList.contains(name)) {
-                                        echo "📦 Building Node.js app for ${name}..."
-                                        docker.image(env.NODE_IMAGE).inside() {
-                                            dir(name) {
-                                                sh "npm install && npm run build --if-present"
-                                            }
+                            // Chạy trực tiếp trong workspace hiện tại, không dùng 'node' mới để tránh mất code
+                            stage("Build: ${name}") {
+                                echo "🛠️ Processing ${name}..."
+                                
+                                if (mavenList.contains(name)) {
+                                    echo "📦 Building JAR for ${name}..."
+                                    docker.image(env.MAVEN_IMAGE).inside('-u root -v /var/lib/jenkins/.m2:/root/.m2') {
+                                        sh "mvn clean package -pl :${name} -am -DskipTests"
+                                    }
+                                } else if (nodeList.contains(name)) {
+                                    echo "📦 Building Node.js app for ${name}..."
+                                    docker.image(env.NODE_IMAGE).inside() {
+                                        dir(name) {
+                                            sh "npm install && npm run build --if-present"
                                         }
                                     }
-
-                                    // 2. Docker Build & Push
-                                    dir(name) {
-                                        def fullImageName = "${env.DOCKER_HUB_USER}/yas-${name}:${env.GIT_TAG}"
-                                        
-                                        withCredentials([usernamePassword(credentialsId: env.DOCKER_CRED_ID, passwordVariable: 'PASS', usernameVariable: 'USER')]) {
-                                            echo "🔨 Building Docker Image: ${fullImageName}"
-                                            sh "docker build -t ${fullImageName} ."
-                                            
-                                            echo "🚀 Pushing Image: ${fullImageName}"
-                                            sh "echo \$PASS | docker login -u \$USER --password-stdin"
-                                            sh "docker push ${fullImageName}"
-                                            
-                                            if (env.BRANCH_NAME == 'main') {
-                                                echo "🏷️ Tagging and pushing 'latest' for ${name}"
-                                                sh "docker tag ${fullImageName} ${env.DOCKER_HUB_USER}/yas-${name}:latest"
-                                                sh "docker push ${env.DOCKER_HUB_USER}/yas-${name}:latest"
-                                            }
-                                            sh "docker logout"
-                                        }
-                                    }
-                                    echo "✅ Finished ${name}"
                                 }
+
+                                dir(name) {
+                                    def fullImageName = "${env.DOCKER_HUB_USER}/yas-${name}:${env.GIT_TAG}"
+                                    
+                                    withCredentials([usernamePassword(credentialsId: env.DOCKER_CRED_ID, passwordVariable: 'PASS', usernameVariable: 'USER')]) {
+                                        echo "🔨 Building Docker Image: ${fullImageName}"
+                                        sh "docker build -t ${fullImageName} ."
+                                        
+                                        echo "🚀 Pushing Image: ${fullImageName}"
+                                        sh "echo \$PASS | docker login -u \$USER --password-stdin"
+                                        sh "docker push ${fullImageName}"
+                                        
+                                        if (env.BRANCH_NAME == 'main') {
+                                            sh "docker tag ${fullImageName} ${env.DOCKER_HUB_USER}/yas-${name}:latest"
+                                            sh "docker push ${env.DOCKER_HUB_USER}/yas-${name}:latest"
+                                        }
+                                        sh "docker logout"
+                                    }
+                                }
+                                echo "✅ Finished ${name}"
                             }
                         }
                     }
                     
-                    // Chạy các build song song để tiết kiệm thời gian
                     parallel builds
                 }
             }
@@ -114,14 +108,15 @@ pipeline {
         always {
             script {
                 def status = currentBuild.result ?: 'SUCCESS'
-                def color = (status == 'SUCCESS') ? '#36a64f' : '#ff0000'
-                
                 echo "🏁 CI Finished with status: ${status}"
+                
+                // Fix conclusion enum case: SUCCESS, FAILURE, NEUTRAL, etc.
+                def checkConclusion = (status == 'SUCCESS') ? 'SUCCESS' : 'FAILURE'
                 
                 publishChecks name: 'Jenkins CI',
                     title: "CI Status: ${status}",
                     summary: "Built Services: ${env.SERVICES_TO_BUILD}. Tag: ${env.GIT_TAG}",
-                    conclusion: (status == 'SUCCESS') ? 'success' : 'failure'
+                    conclusion: checkConclusion
             }
         }
         cleanup {
