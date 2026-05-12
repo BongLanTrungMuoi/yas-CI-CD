@@ -50,10 +50,11 @@ pipeline {
             steps {
                 script {
                     def serviceList = env.SERVICES_TO_BUILD.split(',')
-                    // Sử dụng dấu : và phân cách bằng dấu phẩy không khoảng trắng
+                    // Thêm dấu ":" trước mỗi service để Maven nhận diện chính xác Artifact ID
                     def mavenProjectList = serviceList.collect { ":${it}" }.join(',')
                     
-                    echo "🛠️ Building JARs for: ${mavenProjectList}"
+                    echo "🛠️ Building JARs for modules: ${mavenProjectList}"
+                    
                     sh """
                         docker run --rm \
                         -v /var/lib/jenkins/.m2:/root/.m2 \
