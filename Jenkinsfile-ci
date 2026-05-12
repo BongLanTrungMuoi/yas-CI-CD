@@ -12,9 +12,11 @@ pipeline {
         stage('1. Initialize & Identify') {
             steps {
                 script {
+                    // Lấy Short Commit ID làm Tag cho Image
                     env.GIT_TAG = sh(script: "git rev-parse --short HEAD", returnStdout: true).trim()
                     echo "🚀 Starting build for Commit: ${env.GIT_TAG}"
                     
+                    // Xác định các thư mục ở root có thay đổi code
                     def changedFiles = ""
                     try {
                         changedFiles = sh(script: "git diff --name-only HEAD~1 HEAD | cut -d/ -f1 | sort -u", returnStdout: true).trim()
@@ -95,6 +97,7 @@ pipeline {
                                 }
                                 echo "✅ Finished ${name}"
                             }
+                            echo "--- Finished ${serviceName} ---"
                         }
                     }
                     
