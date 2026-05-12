@@ -48,15 +48,10 @@ pipeline {
                             echo "--- Starting Build for Service: ${serviceName} ---"
                             
                             if (mavenServices.contains(serviceName)) {
-                                // A. Build JAR dùng Docker Maven (Sử dụng JDK 25 để khớp với code)
-                                sh """
-                                    docker run --rm \
-                                    -v /var/lib/jenkins/.m2:/root/.m2 \
-                                    -v \$(pwd):/app \
-                                    -w /app \
-                                    maven:3.9-eclipse-temurin-21-alpine \
-                                    mvn clean package -pl ${serviceName} -am -DskipTests
-                                """
+                                // A. Build JAR dùng Jenkins Docker DSL (Tự động mount workspace đúng cách)
+                                docker.image('maven:3.9-eclipse-temurin-21-alpine').inside('-v /var/lib/jenkins/.m2:/root/.m2') {
+                                    sh "mvn clean package -pl ${serviceName} -am -DskipTests"
+                                }
                             } else {
                                 echo "Skipping Maven build for non-Maven service: ${serviceName}"
                                 // Bạn có thể thêm logic build Docker cho Node.js ở đây nếu cần
