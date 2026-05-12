@@ -22,10 +22,11 @@ pipeline {
                         changedFiles = sh(script: "ls -d */ | cut -f1 -d'/'", returnStdout: true).trim()
                     }
                     
-                    // Danh sách các service hợp lệ trong dự án yas của bạn
-                    def validServices = ['cart', 'customer', 'inventory', 'product', 'order', 'identity', 'search', 'media', 'payment', 'location', 'backoffice', 'storefront']
+                    // Danh sách các service Maven và Node.js trong dự án
+                    def mavenServices = ['cart', 'customer', 'inventory', 'product', 'order', 'media', 'payment', 'location', 'backoffice-bff', 'storefront-bff', 'search', 'tax', 'webhook', 'sampledata', 'recommendation', 'delivery', 'common-library']
+                    def nodeServices = ['backoffice', 'storefront']
                     
-                    def targetServices = changedFiles.split('\n').findAll { validServices.contains(it) }
+                    def targetServices = changedFiles.split('\n').findAll { (mavenServices + nodeServices).contains(it) }
                     
                     env.SERVICES_TO_BUILD = targetServices.join(',')
                     echo "Target services identified: ${env.SERVICES_TO_BUILD}"
@@ -40,21 +41,26 @@ pipeline {
             steps {
                 script {
                     def serviceList = env.SERVICES_TO_BUILD.split(',')
+                    def mavenServices = ['cart', 'customer', 'inventory', 'product', 'order', 'media', 'payment', 'location', 'backoffice-bff', 'storefront-bff', 'search', 'tax', 'webhook', 'sampledata', 'recommendation', 'delivery', 'common-library']
                     
                     for (serviceName in serviceList) {
                         stage("Service: ${serviceName}") {
                             echo "--- Starting Build for Service: ${serviceName} ---"
                             
-                            // A. Build JAR dùng Docker Maven (Sử dụng JDK 25 để khớp với code)
-                            // Lưu ý: Volume /var/lib/jenkins/.m2 giúp cache lại thư viện để build nhanh hơn
-                            sh """
-                                docker run --rm \
-                                -v /var/lib/jenkins/.m2:/root/.m2 \
-                                -v \$(pwd):/app \
-                                -w /app \
-                                maven:3.9-eclipse-temurin-25-alpine \
-                                mvn clean package -pl ${serviceName} -am -DskipTests
-                            """
+                            if (mavenServices.contains(serviceName)) {
+                                // A. Build JAR dùng Docker Maven (Sử dụng JDK 25 để khớp với code)
+                                sh """
+                                    docker run --rm \
+                                    -v /var/lib/jenkins/.m2:/root/.m2 \
+                                    -v \$(pwd):/app \
+                                    -w /app \
+                                    maven:3.9-eclipse-temurin-25-alpine \
+                                    mvn clean package -pl :${serviceName} -am -DskipTests
+                                """
+                            } else {
+                                echo "Skipping Maven build for non-Maven service: ${serviceName}"
+                                // Bạn có thể thêm logic build Docker cho Node.js ở đây nếu cần
+                            }
 
                             // B. Build & Push Docker Image lên Docker Hub
                             dir("${serviceName}") {
