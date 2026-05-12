@@ -8,13 +8,6 @@ pipeline {
         NODE_IMAGE      = 'node:20-alpine'
     }
 
-    options {
-        timeout(time: 1, unit: 'HOURS')
-        timestamps()
-        buildDiscarder(logRotator(numToKeepStr: '10'))
-        ansiColor('xterm')
-    }
-
     stages {
         stage('1. Initialize & Identify') {
             steps {
