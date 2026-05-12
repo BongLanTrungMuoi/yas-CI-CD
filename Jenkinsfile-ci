@@ -54,8 +54,8 @@ pipeline {
                                     -v /var/lib/jenkins/.m2:/root/.m2 \
                                     -v \$(pwd):/app \
                                     -w /app \
-                                    maven:3.9-eclipse-temurin-25-alpine \
-                                    mvn clean package -pl :${serviceName} -am -DskipTests
+                                    maven:3.9-eclipse-temurin-21-alpine \
+                                    mvn clean package -pl ${serviceName} -am -DskipTests
                                 """
                             } else {
                                 echo "Skipping Maven build for non-Maven service: ${serviceName}"
