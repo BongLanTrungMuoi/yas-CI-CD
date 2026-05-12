@@ -2,24 +2,20 @@ pipeline {
     agent any
 
     environment {
-        // Thông tin Docker Hub - Thay đổi đúng Username của bạn
         DOCKER_HUB_USER = 'melyen'
         DOCKER_CRED_ID  = 'dockerhub-token'
         
-        // Danh sách các service hợp lệ trong dự án monorepo
-        VALID_SERVICES = 'cart,customer,inventory,product,order,identity,search,media,payment,location,backoffice,storefront'
+        // Danh sách các service hợp lệ (phải khớp với tên thư mục và artifactId trong pom.xml)
+        VALID_SERVICES = 'cart,customer,inventory,product,order,identity,search,media,payment,location,backoffice-bff,backoffice-ui,storefront-bff,storefront-ui,tax,webhook,sampledata,recommendation,delivery'
     }
 
     stages {
         stage('1. Identify Changes') {
             steps {
                 script {
-                    // 1. Lấy Short Commit ID làm Tag duy nhất
                     env.GIT_TAG = sh(script: "git rev-parse --short HEAD", returnStdout: true).trim()
                     
-                    // 2. Xác định các service có thay đổi code
                     def changedFiles = ""
-                    // Kiểm tra xem có mã Revision từ Webhook không để tránh lỗi 'null'
                     if (env.BEFORE_REVISION && env.AFTER_REVISION && env.BEFORE_REVISION != "null") {
                         echo "🔍 Detecting changes between ${env.BEFORE_REVISION} and ${env.AFTER_REVISION}"
                         changedFiles = sh(script: "git diff --name-only ${env.BEFORE_REVISION} ${env.AFTER_REVISION} | cut -d/ -f1 | sort -u", returnStdout: true).trim()
@@ -28,7 +24,6 @@ pipeline {
                         try {
                             changedFiles = sh(script: "git diff --name-only HEAD~1 HEAD | cut -d/ -f1 | sort -u", returnStdout: true).trim()
                         } catch (e) {
-                            echo "🆕 First build or no history. Checking all directories."
                             changedFiles = sh(script: "ls -d */ | cut -f1 -d'/'", returnStdout: true).trim()
                         }
                     }
@@ -52,11 +47,12 @@ pipeline {
             steps {
                 script {
                     def serviceList = env.SERVICES_TO_BUILD.split(',')
-                    // Thêm dấu ":" trước mỗi service để Maven nhận diện chính xác Artifact ID
+                    // Định dạng Maven: -pl :module1,:module2 (Dùng dấu : và dấu phẩy)
                     def mavenProjectList = serviceList.collect { ":${it}" }.join(',')
                     
                     echo "🛠️ Building JARs for modules: ${mavenProjectList}"
                     
+                    // Sử dụng Java 21 để khớp với cấu trúc dự án
                     sh """
                         docker run --rm \
                         -v /var/lib/jenkins/.m2:/root/.m2 \
@@ -75,9 +71,9 @@ pipeline {
                 script {
                     def serviceList = env.SERVICES_TO_BUILD.split(',')
                     
-                    // Sử dụng Docker Pipeline Plugin để quản lý Login/Logout tự động và bảo mật
                     docker.withRegistry('https://index.docker.io/v1/', "${DOCKER_CRED_ID}") {
                         for (serviceName in serviceList) {
+                            // dir() đảm bảo chúng ta vào đúng thư mục chứa Dockerfile của service đó
                             dir("${serviceName}") {
                                 def fullImageName = "${DOCKER_HUB_USER}/yas-${serviceName}:${env.GIT_TAG}"
                                 
@@ -87,7 +83,6 @@ pipeline {
                                 echo "🚀 Pushing Image to Docker Hub..."
                                 customImage.push()
                                 
-                                // Nếu là branch main, đẩy thêm tag 'latest'
                                 if (env.BRANCH_NAME == 'main') {
                                     customImage.push('latest')
                                 }
