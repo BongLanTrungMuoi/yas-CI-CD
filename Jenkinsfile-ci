@@ -49,7 +49,7 @@ pipeline {
                             
                             if (mavenServices.contains(serviceName)) {
                                 // A. Build JAR dùng Jenkins Docker DSL (Tự động mount workspace đúng cách)
-                                docker.image('maven:3.9-eclipse-temurin-21-alpine').inside('-v /var/lib/jenkins/.m2:/root/.m2') {
+                                docker.image('maven:3.9-eclipse-temurin-21-alpine').inside('-u root -v /var/lib/jenkins/.m2:/root/.m2') {
                                     sh "mvn clean package -pl ${serviceName} -am -DskipTests"
                                 }
                             } else {
