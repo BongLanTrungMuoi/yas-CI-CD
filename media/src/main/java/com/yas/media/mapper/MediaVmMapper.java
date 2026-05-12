@@ -8,4 +8,3 @@ import org.mapstruct.Mapper;
 @Mapper(componentModel = "spring")
 public interface MediaVmMapper extends BaseMapper<Media, MediaVm> {
 }
-
