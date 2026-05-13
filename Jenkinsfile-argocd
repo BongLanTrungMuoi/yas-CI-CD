@@ -25,7 +25,7 @@ pipeline {
     }
 
     environment {
-        GITOPS_REPO = 'https://github.com/Melyenn/yas-gitops.git'
+        GITOPS_REPO = 'https://github.com/BongLanTrungMuoi/yas-gitops.git'
         YAS_NAMESPACE = "yas-13" // Cố định theo môi trường dev hiện tại
         ENV_TAG = "dev-13"
     }
@@ -91,7 +91,7 @@ pipeline {
                             else
                                 git commit -m 'deploy: update service branches (Build #${env.BUILD_NUMBER}) [skip ci]'
                                 # Đẩy code bằng token của GitHub App
-                                git push https://x-access-token:${GITHUB_APP_TOKEN}@github.com/Melyenn/yas-gitops.git HEAD:main
+                                git push https://x-access-token:${GITHUB_APP_TOKEN}@github.com/BongLanTrungMuoi/yas-gitops.git HEAD:main
                             fi
                         """
                     }
