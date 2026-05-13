@@ -32,7 +32,7 @@ helm upgrade --install yas-configuration ../charts/yas-configuration \
 --set global.domain="$DOMAIN" \
 --set global.envTag="$ENV_TAG"
 
-sleep 10
+sleep 50
 
 echo ">>> Deploying Backoffice..."
 helm dependency build ../charts/backoffice-bff
@@ -49,7 +49,7 @@ helm upgrade --install backoffice-ui ../charts/backoffice-ui \
 --set ui.extraEnvs[0].name=API_BASE_PATH \
 --set ui.extraEnvs[0].value="http://$BACKOFFICE_HOST/api"
 
-sleep 10
+sleep 50
 
 echo ">>> Deploying Storefront..."
 helm dependency build ../charts/storefront-bff
@@ -66,14 +66,14 @@ helm upgrade --install storefront-ui ../charts/storefront-ui \
 --set ui.extraEnvs[0].name=API_BASE_PATH \
 --set ui.extraEnvs[0].value="http://$STOREFRONT_HOST/api"
 
-sleep 10
+sleep 50
 
 echo ">>> Deploying Swagger UI..."
 helm upgrade --install swagger-ui ../charts/swagger-ui \
 --namespace "$NAMESPACE" \
 --set ingress.host="$API_HOST"
 
-sleep 10
+sleep 50
 
 echo ">>> Deploying Core Microservices..."
 for chart in {"cart","customer","inventory","location","media","order","payment","product","promotion","rating","search","tax","recommendation","webhook","sampledata"} ; do
@@ -83,7 +83,7 @@ for chart in {"cart","customer","inventory","location","media","order","payment"
     --set backend.ingress.host="$API_HOST" \
     --set global.domain="$DOMAIN" \
     --set global.envTag="$ENV_TAG"
-    sleep 10
+    sleep 50
 done
 
 echo ">>> Xong Giai đoạn 2.2: Tất cả Microservices và UI đã được cài vào namespace '$NAMESPACE' với domain prefix '$ENV_TAG'."
