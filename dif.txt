@@ -1,0 +1,74 @@
+diff --git a/k8s-cd/deploy/03-deploy-apps.sh b/k8s-cd/deploy/03-deploy-apps.sh
+index 45d800b5..327cb0d1 100755
+--- a/k8s-cd/deploy/03-deploy-apps.sh
++++ b/k8s-cd/deploy/03-deploy-apps.sh
+@@ -32,7 +32,7 @@ helm upgrade --install yas-configuration ../charts/yas-configuration \
+ --set global.domain="$DOMAIN" \
+ --set global.envTag="$ENV_TAG"
+ 
+-sleep 10
++sleep 50
+ 
+ echo ">>> Deploying Backoffice..."
+ helm dependency build ../charts/backoffice-bff
+@@ -49,7 +49,7 @@ helm upgrade --install backoffice-ui ../charts/backoffice-ui \
+ --set ui.extraEnvs[0].name=API_BASE_PATH \
+ --set ui.extraEnvs[0].value="http://$BACKOFFICE_HOST/api"
+ 
+-sleep 10
++sleep 50
+ 
+ echo ">>> Deploying Storefront..."
+ helm dependency build ../charts/storefront-bff
+@@ -66,14 +66,14 @@ helm upgrade --install storefront-ui ../charts/storefront-ui \
+ --set ui.extraEnvs[0].name=API_BASE_PATH \
+ --set ui.extraEnvs[0].value="http://$STOREFRONT_HOST/api"
+ 
+-sleep 10
++sleep 50
+ 
+ echo ">>> Deploying Swagger UI..."
+ helm upgrade --install swagger-ui ../charts/swagger-ui \
+ --namespace "$NAMESPACE" \
+ --set ingress.host="$API_HOST"
+ 
+-sleep 10
++sleep 50
+ 
+ echo ">>> Deploying Core Microservices..."
+ for chart in {"cart","customer","inventory","location","media","order","payment","product","promotion","rating","search","tax","recommendation","webhook","sampledata"} ; do
+@@ -83,7 +83,7 @@ for chart in {"cart","customer","inventory","location","media","order","payment"
+     --set backend.ingress.host="$API_HOST" \
+     --set global.domain="$DOMAIN" \
+     --set global.envTag="$ENV_TAG"
+-    sleep 10
++    sleep 50
+ done
+ 
+ echo ">>> Xong Giai đoạn 2.2: Tất cả Microservices và UI đã được cài vào namespace '$NAMESPACE' với domain prefix '$ENV_TAG'."
+diff --git a/k8s-cd/deploy/kafka/akhq.values.yaml b/k8s-cd/deploy/kafka/akhq.values.yaml
+index eb63f715..22c8245f 100644
+--- a/k8s-cd/deploy/kafka/akhq.values.yaml
++++ b/k8s-cd/deploy/kafka/akhq.values.yaml
+@@ -11,7 +11,7 @@ configuration:
+         connect:
+           - name: debezium-connect-cluster
+             url: http://debezium-connect-cluster-connect-api:8083
+-hostname: &hostname akhq-dev-46.yas.local.com
++hostname: &hostname akhq-dev-13.yas.local.com
+ ingress:
+   enabled: true
+   ingressClassName: nginx
+diff --git a/k8s-cd/deploy/postgres/pgadmin/values.yaml b/k8s-cd/deploy/postgres/pgadmin/values.yaml
+index 054ef1ed..cda1a3cc 100644
+--- a/k8s-cd/deploy/postgres/pgadmin/values.yaml
++++ b/k8s-cd/deploy/postgres/pgadmin/values.yaml
+@@ -41,7 +41,7 @@ persistence:
+ service:
+   type: ClusterIP
+   port: 80
+-hostname: &hostname pgadmin-dev-46.yas.local.com
++hostname: &hostname pgadmin-dev-13.yas.local.com
+ ingress:
+   enabled: true
+   className: "nginx"
