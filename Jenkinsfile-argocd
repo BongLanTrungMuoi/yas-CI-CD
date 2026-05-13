@@ -75,13 +75,26 @@ pipeline {
         stage('Git Commit and Push') {
             steps {
                 script {
-                    sh """
-                        git config user.email "jenkins-bot@yas.local"
-                        git config user.name "Jenkins GitOps Bot"
-                        git add values-dev.yaml
-                        git commit -m "deploy: update service branches (Build #${env.BUILD_ID}) [skip ci]" || echo "No changes to commit"
-                        git push origin main
-                    """
+                    // Sử dụng ID GitHub App của bạn: 'jenkins-yas'
+                    withCredentials([usernamePassword(credentialsId: 'jenkins-yas', 
+                                    passwordVariable: 'GITHUB_APP_TOKEN', 
+                                    usernameVariable: 'GITHUB_APP_USER')]) {
+                        
+                        sh "git config user.email jenkins-bot@yas.local"
+                        sh "git config user.name 'Jenkins GitOps Bot'"
+                        sh "git add values-dev.yaml"
+                        
+                        // Tránh lỗi nếu không có thay đổi gì để commit
+                        sh """
+                            if git diff --cached --quiet; then
+                                echo "No changes to commit"
+                            else
+                                git commit -m 'deploy: update service branches (Build #${env.BUILD_NUMBER}) [skip ci]'
+                                # Đẩy code bằng token của GitHub App
+                                git push https://x-access-token:${GITHUB_APP_TOKEN}@github.com/Melyenn/yas-gitops.git HEAD:main
+                            fi
+                        """
+                    }
                 }
             }
         }
