@@ -1,0 +1,86 @@
+pipeline {
+    agent any
+
+    parameters {
+        string(name: 'IMAGE_TAG', defaultValue: 'latest', description: 'Tag to deploy for all services')
+        booleanParam(name: 'FORCE_SYNC', defaultValue: true, description: 'Force ArgoCD to sync immediately')
+    }
+
+    environment {
+        GITOPS_REPO = 'https://github.com/Melyenn/yas-gitops.git'
+        // Dùng ssh agent hoặc git credentials tùy setup của Jenkins
+        GIT_URL = "github.com:Melyenn/yas-gitops.git"
+    }
+
+    stages {
+        stage('Clone GitOps Repo') {
+            steps {
+                script {
+                    sh "rm -rf yas-gitops"
+                    // Clone sử dụng git credentials đã cấu hình trong Jenkins
+                    checkout scmGit(
+                        branches: [[name: 'main']],
+                        userRemoteConfigs: [[url: env.GITOPS_REPO]]
+                    )
+                }
+            }
+        }
+
+        stage('Update Image Tags') {
+            steps {
+                script {
+                    def services = [
+                        "backoffice-bff", "backoffice-ui", "storefront-bff", "storefront-ui", 
+                        "cart", "customer", "inventory", "location", "media", "order", 
+                        "payment", "product", "promotion", "rating", "search", "tax", 
+                        "recommendation", "webhook", "sampledata", "swagger-ui"
+                    ]
+                    
+                    echo "Updating services in values-dev.yaml to tag: ${params.IMAGE_TAG}"
+                    
+                    for (svc in services) {
+                        // Cập nhật tag cho từng service trong map services
+                        sh "yq -i '.services.\"${svc}\".tag = \"${params.IMAGE_TAG}\"' values-dev.yaml"
+                    }
+                }
+            }
+        }
+
+        stage('Git Commit and Push') {
+            steps {
+                script {
+                    sh """
+                        git config user.email "jenkins-bot@yas.local"
+                        git config user.name "Jenkins GitOps Bot"
+                        git add values-dev.yaml
+                        git commit -m "deploy: update images to ${params.IMAGE_TAG} (Build #${env.BUILD_ID})" || echo "No changes to commit"
+                        git push origin main
+                    """
+                }
+            }
+        }
+
+        stage('ArgoCD Manual Sync') {
+            when {
+                expression { params.FORCE_SYNC == true }
+            }
+            steps {
+                script {
+                    echo "Triggering hard refresh on ArgoCD Root App..."
+                    // Lệnh này yêu cầu Jenkins có quyền kubectl hoặc gọi qua API của ArgoCD
+                    // Ở đây dùng kubectl patch như mình đã làm thủ công
+                    sh "kubectl patch application yas-root-dev -n argocd --type merge -p '{\"metadata\":{\"annotations\":{\"argocd.argoproj.io/refresh\":\"hard\"}}}'"
+                }
+            }
+        }
+    }
+
+    post {
+        success {
+            echo "=========================================================="
+            echo " GITOP DEPLOYMENT PUSHED SUCCESSFULLY"
+            echo " Monitor ArgoCD at: http://argocd.yas.local.com"
+            echo "=========================================================="
+        }
+    }
+}
