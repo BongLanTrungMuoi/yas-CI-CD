@@ -8,13 +8,6 @@ pipeline {
         NODE_IMAGE      = 'node:20-alpine'
     }
 
-    options {
-        timeout(time: 1, unit: 'HOURS')
-        timestamps()
-        buildDiscarder(logRotator(numToKeepStr: '10'))
-        ansiColor('xterm')
-    }
-
     stages {
         stage('1. Initialize & Identify') {
             steps {
@@ -30,10 +23,10 @@ pipeline {
                         changedFiles = sh(script: "ls -d */ | cut -f1 -d'/'", returnStdout: true).trim()
                     }
                     
-                    // Danh sách các service hợp lệ trong dự án yas của bạn
-                    def validServices = ['cart', 'customer', 'inventory', 'product', 'order', 'identity', 'search', 'media', 'payment', 'location', 'backoffice', 'storefront']
+                    def mavenServices = ['cart', 'customer', 'inventory', 'product', 'order', 'media', 'payment', 'location', 'backoffice-bff', 'storefront-bff', 'search', 'tax', 'webhook', 'sampledata', 'recommendation', 'delivery', 'common-library']
+                    def nodeServices = ['backoffice', 'storefront']
                     
-                    def targetServices = changedFiles.split('\n').findAll { validServices.contains(it) }
+                    def targetServices = changedFiles.split('\n').findAll { (mavenServices + nodeServices).contains(it) }
                     
                     if (targetServices.isEmpty()) {
                         echo "⏩ No valid services changed. Skipping build."
@@ -56,42 +49,28 @@ pipeline {
             steps {
                 script {
                     def serviceList = env.SERVICES_TO_BUILD.split(',')
+                    def mavenList = env.MAVEN_LIST.split(',')
+                    def nodeList = env.NODE_LIST.split(',')
+                    
+                    def builds = [:]
                     
                     for (serviceName in serviceList) {
-                        stage("Service: ${serviceName}") {
-                            echo "--- Starting Build for Service: ${serviceName} ---"
-                            
-                            // A. Build JAR dùng Docker Maven (Sử dụng JDK 25 để khớp với code)
-                            // Lưu ý: Volume /var/lib/jenkins/.m2 giúp cache lại thư viện để build nhanh hơn
-                            sh """
-                                docker run --rm \
-                                -v /var/lib/jenkins/.m2:/root/.m2 \
-                                -v \$(pwd):/app \
-                                -w /app \
-                                maven:3.9-eclipse-temurin-25-alpine \
-                                mvn clean package -pl ${serviceName} -am -DskipTests
-                            """
-
-                            // B. Build & Push Docker Image lên Docker Hub
-                            dir("${serviceName}") {
-                                def fullImageName = "${DOCKER_HUB_USER}/yas-${serviceName}:${env.GIT_TAG}"
+                        def name = serviceName
+                        builds["Service: ${name}"] = {
+                            // Chạy trực tiếp trong workspace hiện tại, không dùng 'node' mới để tránh mất code
+                            stage("Build: ${name}") {
+                                echo "🛠️ Processing ${name}..."
                                 
-                                withCredentials([usernamePassword(credentialsId: "${DOCKER_CRED_ID}", passwordVariable: 'PASS', usernameVariable: 'USER')]) {
-                                    echo "🔨 Building Docker Image: ${fullImageName}"
-                                    sh "docker build -t ${fullImageName} ."
-                                    
-                                    // 1. Compile (Maven or Node)
-                                    if (mavenList.contains(name)) {
-                                        echo "📦 Building JAR for ${name}..."
-                                        docker.image(env.MAVEN_IMAGE).inside('-u root -v /var/lib/jenkins/.m2:/root/.m2') {
-                                            sh "mvn clean package -pl :${name} -am -DskipTests"
-                                        }
-                                    } else if (nodeList.contains(name)) {
-                                        echo "📦 Building Node.js app for ${name}..."
-                                        docker.image(env.NODE_IMAGE).inside() {
-                                            dir(name) {
-                                                sh "npm install && npm run build --if-present"
-                                            }
+                                if (mavenList.contains(name)) {
+                                    echo "📦 Building JAR for ${name}..."
+                                    docker.image(env.MAVEN_IMAGE).inside('-u root -v /var/lib/jenkins/.m2:/root/.m2') {
+                                        sh "mvn clean package -pl :${name} -am -DskipTests"
+                                    }
+                                } else if (nodeList.contains(name)) {
+                                    echo "📦 Building Node.js app for ${name}..."
+                                    docker.image(env.NODE_IMAGE).inside() {
+                                        dir(name) {
+                                            sh "npm install && npm run build --if-present"
                                         }
                                     }
                                 }
