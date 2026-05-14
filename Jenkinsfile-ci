@@ -2,7 +2,7 @@ pipeline {
     agent any
 
     environment {
-        DOCKER_HUB_USER = 'melyen'
+        DOCKER_HUB_USER = 'hownamee'
         DOCKER_CRED_ID  = 'dockerhub-token'
         MAVEN_IMAGE     = 'maven:3.9-eclipse-temurin-21-alpine'
         NODE_IMAGE      = 'node:20-alpine'

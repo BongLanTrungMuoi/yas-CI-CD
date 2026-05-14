@@ -22,7 +22,6 @@ import org.springframework.web.bind.annotation.RestController;
 public class AddressController {
     private final AddressService addressService;
 
-
     @PostMapping("/storefront/addresses")
     public ResponseEntity<AddressGetVm> createAddress(@Valid @RequestBody AddressPostVm dto) {
         return ResponseEntity.ok(addressService.createAddress(dto));
