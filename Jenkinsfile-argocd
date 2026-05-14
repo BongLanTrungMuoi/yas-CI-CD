@@ -1,6 +1,12 @@
 pipeline {
     agent any
 
+    options {
+        // Tự quản lý checkout để sửa lỗi safe directory của Git
+        skipDefaultCheckout()
+        timeout(time: 1, unit: 'HOURS')
+    }
+
     parameters {
         choice(name: 'TARGET_ENV', choices: ['dev', 'staging'], description: 'Environment to deploy to')
         string(name: 'TARGET_TAG', defaultValue: '', description: 'Specific tag to deploy (e.g., v1.2.3). If empty, branch logic is used.')
@@ -34,10 +40,19 @@ pipeline {
     }
 
     stages {
-        stage('Clone GitOps Repo') {
+        stage('Initialize & Clone') {
             steps {
                 script {
-                    // Cô lập việc clone GitOps repo vào thư mục riêng để tránh hỏng workspace của Jenkins
+                    // Khắc phục lỗi bảo mật "dubious ownership" của Git trên Jenkins agent
+                    sh "git config --global --add safe.directory '*'"
+                    
+                    // Dọn dẹp workspace (thay thế cho Wipe out repository & force clone)
+                    deleteDir()
+                    
+                    // Checkout repo hiện tại để lấy các file cần thiết
+                    checkout scm
+                    
+                    // Cô lập việc clone GitOps repo vào thư mục riêng
                     dir('yas-gitops') {
                         checkout scmGit(
                             branches: [[name: 'main']],

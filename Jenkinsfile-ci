@@ -1,6 +1,11 @@
 pipeline {
     agent any
 
+    options {
+        // Tránh lỗi dubious ownership và tự quản lý checkout
+        skipDefaultCheckout()
+    }
+
     environment {
         DOCKER_HUB_USER = 'hownamee'
         DOCKER_CRED_ID  = 'dockerhub-token'
@@ -12,6 +17,9 @@ pipeline {
         stage('1. Initialize & Identify') {
             steps {
                 script {
+                    sh "git config --global --add safe.directory '*'"
+                    checkout scm
+                    
                     env.GIT_TAG = sh(script: "git rev-parse --short HEAD", returnStdout: true).trim()
                     echo "🚀 Starting build for Commit: ${env.GIT_TAG}"
                     
