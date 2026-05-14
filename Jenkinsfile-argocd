@@ -2,6 +2,9 @@ pipeline {
     agent any
 
     parameters {
+        choice(name: 'TARGET_ENV', choices: ['dev', 'staging'], description: 'Environment to deploy to')
+        string(name: 'TARGET_TAG', defaultValue: '', description: 'Specific tag to deploy (e.g., v1.2.3). If empty, branch logic is used.')
+        string(name: 'common_branch', defaultValue: '', description: 'Override branch for all services (used by CI)')
         // Tham số cho từng service đúng như yêu cầu mục 4
         string(name: 'backoffice_bff', defaultValue: 'main', description: 'Branch for backoffice-bff')
         string(name: 'backoffice_ui', defaultValue: 'main', description: 'Branch for backoffice-ui')
@@ -26,8 +29,8 @@ pipeline {
 
     environment {
         GITOPS_REPO = 'https://github.com/BongLanTrungMuoi/yas-gitops.git'
-        YAS_NAMESPACE = "yas-13" // Cố định theo môi trường dev hiện tại
-        ENV_TAG = "dev-13"
+        VALUES_FILE = "values-${params.TARGET_ENV}.yaml"
+        ARGO_APP    = "yas-root-${params.TARGET_ENV}"
     }
 
     stages {
@@ -55,18 +58,18 @@ pipeline {
                     
                     for (svc in services) {
                         def paramName = svc.replace('-', '_')
-                        def branchName = params."${paramName}" ?: 'main'
+                        def branchName = params.common_branch ?: (params."${paramName}" ?: 'main')
                         def tag = 'latest'
 
-                        // Mục 3 & 4: Nếu branch khác main, lấy commit ID cuối cùng
-                        if (branchName != 'main') {
+                        if (params.TARGET_TAG) {
+                            tag = params.TARGET_TAG
+                        } else if (branchName != 'main') {
                             echo "Fetching latest commit ID for ${svc} from branch ${branchName}..."
-                            // Giả sử repo gốc là Hownameee/yas.git (Cập nhật đúng URL repo của bạn nếu khác)
-                            tag = sh(script: "git ls-remote https://github.com/Hownameee/yas.git ${branchName} | cut -f1", returnStdout: true).trim()
+                            tag = sh(script: "git ls-remote https://github.com/Hownameee/yas.git ${branchName} | cut -f1 | cut -c1-7", returnStdout: true).trim()
                         }
                         
-                        echo "Setting ${svc} to tag: ${tag}"
-                        sh "yq -i '.services.\"${svc}\".tag = \"${tag}\"' values-dev.yaml"
+                        echo "Setting ${svc} to tag: ${tag} in ${env.VALUES_FILE}"
+                        sh "yq -i '.services.\"${svc}\".tag = \"${tag}\"' ${env.VALUES_FILE}"
                     }
                 }
             }
@@ -82,14 +85,14 @@ pipeline {
                         
                         sh "git config user.email jenkins-bot@yas.local"
                         sh "git config user.name 'Jenkins GitOps Bot'"
-                        sh "git add values-dev.yaml"
+                        sh "git add ${env.VALUES_FILE}"
                         
                         // Tránh lỗi nếu không có thay đổi gì để commit
                         sh """
                             if git diff --cached --quiet; then
                                 echo "No changes to commit"
                             else
-                                git commit -m 'deploy: update service branches (Build #${env.BUILD_NUMBER}) [skip ci]'
+                                git commit -m 'deploy: update ${params.TARGET_ENV} images (Build #${env.BUILD_NUMBER}) [skip ci]'
                                 # Đẩy code bằng token của GitHub App
                                 git push https://x-access-token:${GITHUB_APP_TOKEN}@github.com/BongLanTrungMuoi/yas-gitops.git HEAD:main
                             fi
@@ -103,20 +106,21 @@ pipeline {
             steps {
                 script {
                     // Force ArgoCD sync
-                    sh "kubectl patch application yas-root-dev -n argocd --type merge -p '{\"metadata\":{\"annotations\":{\"argocd.argoproj.io/refresh\":\"hard\"}}}'"
+                    sh "kubectl patch application ${env.ARGO_APP} -n argocd --type merge -p '{\"metadata\":{\"annotations\":{\"argocd.argoproj.io/refresh\":\"hard\"}}}'"
                     
                     // Mục 5: Hiển thị thông tin truy cập
-                    def domain = sh(script: "yq -r '.global.domain' values-dev.yaml", returnStdout: true).trim()
+                    def domain = sh(script: "yq -r '.global.domain' ${env.VALUES_FILE}", returnStdout: true).trim()
+                    def env_tag = sh(script: "yq -r '.global.envTag' ${env.VALUES_FILE}", returnStdout: true).trim()
                     def nodeIp = sh(script: "kubectl get nodes -o jsonpath='{.items[0].status.addresses[?(@.type==\"InternalIP\")].address}'", returnStdout: true).trim()
                     
                     echo "=========================================================="
-                    echo " DEPLOYMENT TRIGGERED VIA GITOPS"
+                    echo " DEPLOYMENT TRIGGERED TO ${params.TARGET_ENV.toUpperCase()}"
                     echo "----------------------------------------------------------"
                     echo "Add this to your /etc/hosts:"
-                    echo "${nodeIp} identity-${env.ENV_TAG}.${domain}"
-                    echo "${nodeIp} backoffice-${env.ENV_TAG}.${domain}"
-                    echo "${nodeIp} storefront-${env.ENV_TAG}.${domain}"
-                    echo "${nodeIp} api-${env.ENV_TAG}.${domain}"
+                    echo "${nodeIp} identity-${env_tag}.${domain}"
+                    echo "${nodeIp} backoffice-${env_tag}.${domain}"
+                    echo "${nodeIp} storefront-${env_tag}.${domain}"
+                    echo "${nodeIp} api-${env_tag}.${domain}"
                     echo "=========================================================="
                 }
             }

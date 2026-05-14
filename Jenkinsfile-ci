@@ -86,6 +86,11 @@ pipeline {
                                         sh "echo \$PASS | docker login -u \$USER --password-stdin"
                                         sh "docker push ${fullImageName}"
                                         
+                                        if (env.TAG_NAME) {
+                                            sh "docker tag ${fullImageName} ${env.DOCKER_HUB_USER}/yas-${name}:${env.TAG_NAME}"
+                                            sh "docker push ${env.DOCKER_HUB_USER}/yas-${name}:${env.TAG_NAME}"
+                                        }
+                                        
                                         if (env.BRANCH_NAME == 'main') {
                                             sh "docker tag ${fullImageName} ${env.DOCKER_HUB_USER}/yas-${name}:latest"
                                             sh "docker push ${env.DOCKER_HUB_USER}/yas-${name}:latest"
@@ -99,6 +104,30 @@ pipeline {
                     }
                     
                     parallel builds
+                }
+            }
+        }
+
+        stage('3. Trigger ArgoCD') {
+            when {
+                expression { env.SERVICES_TO_BUILD != "" }
+            }
+            steps {
+                script {
+                    // Nếu có tag (v1.2.3) thì deploy staging, ngược lại deploy dev
+                    def targetEnv = (env.TAG_NAME && env.TAG_NAME.startsWith('v')) ? 'staging' : 'dev'
+                    def targetTag = env.TAG_NAME ?: ''
+                    def branch = env.BRANCH_NAME ?: 'main'
+                    
+                    echo "🚀 Triggering ArgoCD Sync Job [Env: ${targetEnv.toUpperCase()}, Tag: ${targetTag}, Branch: ${branch}]"
+                    
+                    build job: 'yas-argocd', 
+                        parameters: [
+                            string(name: 'TARGET_ENV', value: targetEnv),
+                            string(name: 'TARGET_TAG', value: targetTag),
+                            string(name: 'common_branch', value: branch)
+                        ],
+                        wait: false
                 }
             }
         }
