@@ -37,11 +37,13 @@ pipeline {
         stage('Clone GitOps Repo') {
             steps {
                 script {
-                    sh "rm -rf yas-gitops"
-                    checkout scmGit(
-                        branches: [[name: 'main']],
-                        userRemoteConfigs: [[url: env.GITOPS_REPO]]
-                    )
+                    // Cô lập việc clone GitOps repo vào thư mục riêng để tránh hỏng workspace của Jenkins
+                    dir('yas-gitops') {
+                        checkout scmGit(
+                            branches: [[name: 'main']],
+                            userRemoteConfigs: [[url: env.GITOPS_REPO]]
+                        )
+                    }
                 }
             }
         }
@@ -68,8 +70,8 @@ pipeline {
                             tag = sh(script: "git ls-remote https://github.com/Hownameee/yas.git ${branchName} | cut -f1 | cut -c1-7", returnStdout: true).trim()
                         }
                         
-                        echo "Setting ${svc} to tag: ${tag} in ${env.VALUES_FILE}"
-                        sh "yq -i '.services.\"${svc}\".tag = \"${tag}\"' ${env.VALUES_FILE}"
+                        echo "Setting ${svc} to tag: ${tag} in yas-gitops/${env.VALUES_FILE}"
+                        sh "yq -i '.services.\"${svc}\".tag = \"${tag}\"' yas-gitops/${env.VALUES_FILE}"
                     }
                 }
             }
@@ -83,20 +85,22 @@ pipeline {
                                     passwordVariable: 'GITHUB_APP_TOKEN', 
                                     usernameVariable: 'GITHUB_APP_USER')]) {
                         
-                        sh "git config user.email jenkins-bot@yas.local"
-                        sh "git config user.name 'Jenkins GitOps Bot'"
-                        sh "git add ${env.VALUES_FILE}"
-                        
-                        // Tránh lỗi nếu không có thay đổi gì để commit
-                        sh """
-                            if git diff --cached --quiet; then
-                                echo "No changes to commit"
-                            else
-                                git commit -m 'deploy: update ${params.TARGET_ENV} images (Build #${env.BUILD_NUMBER}) [skip ci]'
-                                # Đẩy code bằng token của GitHub App
-                                git push https://x-access-token:${GITHUB_APP_TOKEN}@github.com/BongLanTrungMuoi/yas-gitops.git HEAD:main
-                            fi
-                        """
+                        dir('yas-gitops') {
+                            sh "git config user.email jenkins-bot@yas.local"
+                            sh "git config user.name 'Jenkins GitOps Bot'"
+                            sh "git add ${env.VALUES_FILE}"
+                            
+                            // Tránh lỗi nếu không có thay đổi gì để commit
+                            sh """
+                                if git diff --cached --quiet; then
+                                    echo "No changes to commit"
+                                else
+                                    git commit -m 'deploy: update ${params.TARGET_ENV} images (Build #${env.BUILD_NUMBER}) [skip ci]'
+                                    # Đẩy code bằng token của GitHub App
+                                    git push https://x-access-token:${GITHUB_APP_TOKEN}@github.com/BongLanTrungMuoi/yas-gitops.git HEAD:main
+                                fi
+                            """
+                        }
                     }
                 }
             }
@@ -109,8 +113,8 @@ pipeline {
                     sh "kubectl patch application ${env.ARGO_APP} -n argocd --type merge -p '{\"metadata\":{\"annotations\":{\"argocd.argoproj.io/refresh\":\"hard\"}}}'"
                     
                     // Mục 5: Hiển thị thông tin truy cập
-                    def domain = sh(script: "yq -r '.global.domain' ${env.VALUES_FILE}", returnStdout: true).trim()
-                    def env_tag = sh(script: "yq -r '.global.envTag' ${env.VALUES_FILE}", returnStdout: true).trim()
+                    def domain = sh(script: "yq -r '.global.domain' yas-gitops/${env.VALUES_FILE}", returnStdout: true).trim()
+                    def env_tag = sh(script: "yq -r '.global.envTag' yas-gitops/${env.VALUES_FILE}", returnStdout: true).trim()
                     def nodeIp = sh(script: "kubectl get nodes -o jsonpath='{.items[0].status.addresses[?(@.type==\"InternalIP\")].address}'", returnStdout: true).trim()
                     
                     echo "=========================================================="
