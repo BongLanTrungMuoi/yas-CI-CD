@@ -124,10 +124,10 @@ pipeline {
         stage('ArgoCD Sync & Info') {
             steps {
                 script {
-                    // Nạp file cấu hình Kubeconfig đã mã hóa được lưu trên Jenkins vào biến môi trường KUBECONFIG
+                    // Plugin sẽ tự động lấy file config từ hệ thống Jenkins ra và gán vào biến KUBECONFIG cho các lệnh bên trong chạy
                     configFileProvider([configFile(fileId: 'k8s-minikube-config', variable: 'KUBECONFIG')]) {
                         
-                        // Force ArgoCD sync bằng kubectl đã có quyền truy cập hợp lệ
+                        // Force ArgoCD sync
                         sh "kubectl patch application ${env.ARGO_APP} -n argocd --type merge -p '{\"metadata\":{\"annotations\":{\"argocd.argoproj.io/refresh\":\"hard\"}}}'"
                         
                         // Hiển thị thông tin truy cập
