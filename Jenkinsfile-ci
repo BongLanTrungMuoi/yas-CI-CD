@@ -31,7 +31,7 @@ pipeline {
                         changedFiles = sh(script: "ls -d */ | cut -f1 -d'/'", returnStdout: true).trim()
                     }
                     
-                    def mavenServices = ['cart', 'customer', 'inventory', 'product', 'order', 'media', 'payment', 'location', 'backoffice-bff', 'storefront-bff', 'search', 'tax', 'webhook', 'sampledata', 'recommendation', 'delivery', 'common-library']
+                    def mavenServices = ['cart', 'customer', 'inventory', 'product', 'order', 'media', 'payment', 'location', 'backoffice-bff', 'storefront-bff', 'search', 'tax', 'webhook', 'sampledata', 'recommendation', 'delivery']
                     def nodeServices = ['backoffice', 'storefront']
                     
                     def targetServices = changedFiles.split('\n').findAll { (mavenServices + nodeServices).contains(it) }
@@ -85,25 +85,30 @@ pipeline {
 
                                 dir(name) {
                                     def fullImageName = "${env.DOCKER_HUB_USER}/yas-${name}:${env.GIT_TAG}"
+                                    // Mỗi service dùng docker config riêng để tránh race condition khi parallel
+                                    def dockerCfg = "${WORKSPACE}/.docker-${name}"
                                     
                                     withCredentials([usernamePassword(credentialsId: env.DOCKER_CRED_ID, passwordVariable: 'PASS', usernameVariable: 'USER')]) {
+                                        sh "mkdir -p ${dockerCfg}"
+                                        sh "echo \$PASS | docker --config ${dockerCfg} login -u \$USER --password-stdin"
+                                        
                                         echo "🔨 Building Docker Image: ${fullImageName}"
                                         sh "docker build -t ${fullImageName} ."
                                         
                                         echo "🚀 Pushing Image: ${fullImageName}"
-                                        sh "echo \$PASS | docker login -u \$USER --password-stdin"
-                                        sh "docker push ${fullImageName}"
+                                        sh "docker --config ${dockerCfg} push ${fullImageName}"
                                         
                                         if (env.TAG_NAME) {
                                             sh "docker tag ${fullImageName} ${env.DOCKER_HUB_USER}/yas-${name}:${env.TAG_NAME}"
-                                            sh "docker push ${env.DOCKER_HUB_USER}/yas-${name}:${env.TAG_NAME}"
+                                            sh "docker --config ${dockerCfg} push ${env.DOCKER_HUB_USER}/yas-${name}:${env.TAG_NAME}"
                                         }
                                         
                                         if (env.BRANCH_NAME == 'main') {
                                             sh "docker tag ${fullImageName} ${env.DOCKER_HUB_USER}/yas-${name}:latest"
-                                            sh "docker push ${env.DOCKER_HUB_USER}/yas-${name}:latest"
+                                            sh "docker --config ${dockerCfg} push ${env.DOCKER_HUB_USER}/yas-${name}:latest"
                                         }
-                                        sh "docker logout"
+                                        sh "docker --config ${dockerCfg} logout"
+                                        sh "rm -rf ${dockerCfg}"
                                     }
                                 }
                                 echo "✅ Finished ${name}"
@@ -125,18 +130,17 @@ pipeline {
                     // Nếu có tag (v1.2.3) thì deploy staging, ngược lại deploy dev
                     def targetEnv = (env.TAG_NAME && env.TAG_NAME.startsWith('v')) ? 'staging' : 'dev'
                     def targetTag = env.TAG_NAME ?: ''
-                    def branch = env.BRANCH_NAME ?: 'main'
                     
-                    echo "🚀 Triggering ArgoCD Sync Job [Env: ${targetEnv.toUpperCase()}, Tag: ${targetTag}, Branch: ${branch}]"
+                    echo "🚀 Triggering ArgoCD Sync Job [Env: ${targetEnv.toUpperCase()}, Tag: ${targetTag}]"
                     
                     // Khởi tạo danh sách tham số cơ bản
                     def triggerParams = [
                         string(name: 'TARGET_ENV', value: targetEnv),
-                        string(name: 'TARGET_TAG', value: targetTag),
-                        string(name: 'common_branch', value: (branch == 'main' ? 'main' : '')) 
+                        string(name: 'TARGET_TAG', value: targetTag)
                     ]
                     
-                    // Chỉ gửi branch cho những service thực sự có thay đổi code
+                    // Chỉ gửi image tag (commit SHA) cho những service thực sự có thay đổi code
+                    // Service không thay đổi sẽ KHÔNG được gửi → ArgoCD giữ nguyên tag hiện tại
                     def serviceList = env.SERVICES_TO_BUILD.split(',')
                     for (svc in serviceList) {
                         // Ánh xạ tên thư mục code sang đúng tên service trong ArgoCD
@@ -145,7 +149,8 @@ pipeline {
                         if (svc == 'storefront') actualSvcName = 'storefront-ui'
                         
                         def paramName = actualSvcName.replace('-', '_')
-                        triggerParams << string(name: paramName, value: branch)
+                        // Gửi commit SHA (image tag) thay vì branch name
+                        triggerParams << string(name: paramName, value: env.GIT_TAG)
                     }
 
                     build job: 'yas-argocd', 
