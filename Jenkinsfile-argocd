@@ -131,25 +131,25 @@ pipeline {
         stage('ArgoCD Sync & Info') {
             steps {
                 script {
-                    // Plugin sẽ tự động lấy file config từ hệ thống Jenkins ra và gán vào biến KUBECONFIG cho các lệnh bên trong chạy
-                    configFileProvider([configFile(fileId: 'k8s-minikube-config', variable: 'KUBECONFIG')]) {
+                    // ÉP Jenkins phải đọc file config chuẩn mà chúng ta vừa test thành công trên Terminal
+                    withEnv(["KUBECONFIG=/var/jenkins_home/.kube/config"]) {
                         
-                        // Force ArgoCD sync
-                        sh "kubectl patch application ${env.ARGO_APP} -n argocd --type merge -p '{\"metadata\":{\"annotations\":{\"argocd.argoproj.io/refresh\":\"hard\"}}}' || echo 'Warning: kubectl failed or not found, skip refresh'"
+                        echo "🔄 Đang kích hoạt Hard-Refresh cho ArgoCD Application..."
                         
-                        // Hiển thị thông tin truy cập
+                        // Chạy lệnh patch sử dụng file config xịn đã cấu hình
+                        sh "kubectl patch application ${env.ARGO_APP} -n argocd --type merge -p '{\"metadata\":{\"annotations\":{\"argocd.argoproj.io/refresh\":\"hard\"}}}'"
+                        
+                        // Đọc thông tin Domain và EnvTag từ file YAML của GitOps
                         def domain = sh(script: "yq -r '.domain' yas-gitops/${env.VALUES_FILE}", returnStdout: true).trim()
                         def env_tag = sh(script: "yq -r '.envTag' yas-gitops/${env.VALUES_FILE}", returnStdout: true).trim()
-                        def nodeIp = sh(script: "kubectl get nodes -o jsonpath='{.items[0].status.addresses[?(@.type==\"InternalIP\")].address}'", returnStdout: true).trim()
-                        if (!nodeIp) {
-                            echo "⚠️ Warning: Could not detect Node IP from cluster. Please check kubectl/KUBECONFIG."
-                            nodeIp = "<NODE_IP>"
-                        }
+                        
+                        // Lấy IP động của máy Host (Chính là IP Gateway 172.17.0.1 đã tìm thấy)
+                        def nodeIp = sh(script: "ip route | grep default | awk '{print \$3}'", returnStdout: true).trim()
                         
                         echo "=========================================================="
-                        echo " DEPLOYMENT TRIGGERED TO ${params.TARGET_ENV.toUpperCase()}"
+                        echo " 🎉 DEPLOYMENT TRIGGERED TO ${params.TARGET_ENV.toUpperCase()}"
                         echo "----------------------------------------------------------"
-                        echo "Add this to your /etc/hosts:"
+                        echo "Hãy copy đoạn dưới đây dán vào file /etc/hosts của bạn:"
                         echo "${nodeIp} identity-${env_tag}.${domain}"
                         echo "${nodeIp} backoffice-${env_tag}.${domain}"
                         echo "${nodeIp} storefront-${env_tag}.${domain}"
