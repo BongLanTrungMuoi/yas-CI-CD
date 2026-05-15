@@ -10,28 +10,28 @@ pipeline {
     parameters {
         choice(name: 'TARGET_ENV', choices: ['dev', 'staging'], description: 'Environment to deploy to')
         string(name: 'TARGET_TAG', defaultValue: '', description: 'Specific tag to deploy (e.g., v1.2.3). Applies to ALL services.')
-        // Tham số cho từng service — CI gửi commit SHA (image tag) cho service có thay đổi
-        // defaultValue = '' nghĩa là service không thay đổi → giữ nguyên tag hiện tại
-        string(name: 'backoffice_bff', defaultValue: '', description: 'Image tag for backoffice-bff')
-        string(name: 'backoffice_ui', defaultValue: '', description: 'Image tag for backoffice-ui')
-        string(name: 'storefront_bff', defaultValue: '', description: 'Image tag for storefront-bff')
-        string(name: 'storefront_ui', defaultValue: '', description: 'Image tag for storefront-ui')
-        string(name: 'cart', defaultValue: '', description: 'Image tag for cart')
-        string(name: 'customer', defaultValue: '', description: 'Image tag for customer')
-        string(name: 'delivery', defaultValue: '', description: 'Image tag for delivery')
-        string(name: 'inventory', defaultValue: '', description: 'Image tag for inventory')
-        string(name: 'location', defaultValue: '', description: 'Image tag for location')
-        string(name: 'media', defaultValue: '', description: 'Image tag for media')
-        string(name: 'order', defaultValue: '', description: 'Image tag for order')
-        string(name: 'payment', defaultValue: '', description: 'Image tag for payment')
-        string(name: 'product', defaultValue: '', description: 'Image tag for product')
-        string(name: 'promotion', defaultValue: '', description: 'Image tag for promotion')
-        string(name: 'rating', defaultValue: '', description: 'Image tag for rating')
-        string(name: 'search', defaultValue: '', description: 'Image tag for search')
-        string(name: 'tax', defaultValue: '', description: 'Image tag for tax')
-        string(name: 'recommendation', defaultValue: '', description: 'Image tag for recommendation')
-        string(name: 'webhook', defaultValue: '', description: 'Image tag for webhook')
-        string(name: 'sampledata', defaultValue: '', description: 'Image tag for sampledata')
+        // Tham số cho từng service — CI gửi commit SHA cho service có thay đổi
+        // Mặc định là 'latest' cho các service không đổi
+        string(name: 'backoffice_bff', defaultValue: 'latest', description: 'Image tag for backoffice-bff')
+        string(name: 'backoffice_ui', defaultValue: 'latest', description: 'Image tag for backoffice-ui')
+        string(name: 'storefront_bff', defaultValue: 'latest', description: 'Image tag for storefront-bff')
+        string(name: 'storefront_ui', defaultValue: 'latest', description: 'Image tag for storefront-ui')
+        string(name: 'cart', defaultValue: 'latest', description: 'Image tag for cart')
+        string(name: 'customer', defaultValue: 'latest', description: 'Image tag for customer')
+        string(name: 'delivery', defaultValue: 'latest', description: 'Image tag for delivery')
+        string(name: 'inventory', defaultValue: 'latest', description: 'Image tag for inventory')
+        string(name: 'location', defaultValue: 'latest', description: 'Image tag for location')
+        string(name: 'media', defaultValue: 'latest', description: 'Image tag for media')
+        string(name: 'order', defaultValue: 'latest', description: 'Image tag for order')
+        string(name: 'payment', defaultValue: 'latest', description: 'Image tag for payment')
+        string(name: 'product', defaultValue: 'latest', description: 'Image tag for product')
+        string(name: 'promotion', defaultValue: 'latest', description: 'Image tag for promotion')
+        string(name: 'rating', defaultValue: 'latest', description: 'Image tag for rating')
+        string(name: 'search', defaultValue: 'latest', description: 'Image tag for search')
+        string(name: 'tax', defaultValue: 'latest', description: 'Image tag for tax')
+        string(name: 'recommendation', defaultValue: 'latest', description: 'Image tag for recommendation')
+        string(name: 'webhook', defaultValue: 'latest', description: 'Image tag for webhook')
+        string(name: 'sampledata', defaultValue: 'latest', description: 'Image tag for sampledata')
     }
 
     environment {
@@ -78,23 +78,16 @@ pipeline {
                     
                     for (svc in services) {
                         def paramName = svc.replace('-', '_')
-                        def svcTag = params."${paramName}"
+                        // Nếu CI gửi image tag (commit SHA) thì dùng, nếu không thì mặc định 'latest'
+                        def tag = (params."${paramName}" && params."${paramName}" != '') ? params."${paramName}" : 'latest'
                         
                         if (params.TARGET_TAG) {
-                            // Staging release: áp dụng TARGET_TAG cho tất cả services
-                            def tag = params.TARGET_TAG
-                            echo "Setting ${svc} to tag: ${tag} (from TARGET_TAG)"
-                            sh "yq -i '.services.\"${svc}\".tag = \"${tag}\"' yas-gitops/${env.VALUES_FILE}"
-                            updatedServices << svc
-                        } else if (svcTag) {
-                            // CI gửi image tag (commit SHA) cho service này → có thay đổi code
-                            echo "Setting ${svc} to tag: ${svcTag} (from CI)"
-                            sh "yq -i '.services.\"${svc}\".tag = \"${svcTag}\"' yas-gitops/${env.VALUES_FILE}"
-                            updatedServices << svc
-                        } else {
-                            // Không có param → service không thay đổi → giữ nguyên tag hiện tại
-                            echo "⏩ Skipping ${svc} — no changes (keeping current tag)"
+                            tag = params.TARGET_TAG
                         }
+                        
+                        echo "Setting ${svc} to tag: ${tag}"
+                        sh "yq -i '.services.\"${svc}\".tag = \"${tag}\"' yas-gitops/${env.VALUES_FILE}"
+                        updatedServices << svc
                     }
                     
                     if (updatedServices.isEmpty()) {
