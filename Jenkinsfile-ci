@@ -129,12 +129,27 @@ pipeline {
                     
                     echo "🚀 Triggering ArgoCD Sync Job [Env: ${targetEnv.toUpperCase()}, Tag: ${targetTag}, Branch: ${branch}]"
                     
+                    // Khởi tạo danh sách tham số cơ bản
+                    def triggerParams = [
+                        string(name: 'TARGET_ENV', value: targetEnv),
+                        string(name: 'TARGET_TAG', value: targetTag),
+                        string(name: 'common_branch', value: (branch == 'main' ? 'main' : '')) 
+                    ]
+                    
+                    // Chỉ gửi branch cho những service thực sự có thay đổi code
+                    def serviceList = env.SERVICES_TO_BUILD.split(',')
+                    for (svc in serviceList) {
+                        // Ánh xạ tên thư mục code sang đúng tên service trong ArgoCD
+                        def actualSvcName = svc
+                        if (svc == 'backoffice') actualSvcName = 'backoffice-ui'
+                        if (svc == 'storefront') actualSvcName = 'storefront-ui'
+                        
+                        def paramName = actualSvcName.replace('-', '_')
+                        triggerParams << string(name: paramName, value: branch)
+                    }
+
                     build job: 'yas-argocd', 
-                        parameters: [
-                            string(name: 'TARGET_ENV', value: targetEnv),
-                            string(name: 'TARGET_TAG', value: targetTag),
-                            string(name: 'common_branch', value: branch)
-                        ],
+                        parameters: triggerParams,
                         wait: false
                 }
             }

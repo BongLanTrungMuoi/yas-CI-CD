@@ -80,7 +80,8 @@ pipeline {
                                     
                         for (svc in services) {
                             def paramName = svc.replace('-', '_')
-                            def branchName = params.common_branch ?: (params."${paramName}" ?: 'main')
+                            // Ưu tiên branch riêng của service, nếu không có/là main thì mới dùng common_branch
+                            def branchName = (params."${paramName}" && params."${paramName}" != 'main') ? params."${paramName}" : (params.common_branch ?: 'main')
                             def tag = 'latest'
 
                             if (params.TARGET_TAG) {
@@ -135,12 +136,12 @@ pipeline {
                     configFileProvider([configFile(fileId: 'k8s-minikube-config', variable: 'KUBECONFIG')]) {
                         
                         // Force ArgoCD sync
-                        sh "kubectl patch application ${env.ARGO_APP} -n argocd --type merge -p '{\"metadata\":{\"annotations\":{\"argocd.argoproj.io/refresh\":\"hard\"}}}'"
+                        sh "kubectl patch application ${env.ARGO_APP} -n argocd --type merge -p '{\"metadata\":{\"annotations\":{\"argocd.argoproj.io/refresh\":\"hard\"}}}' || echo 'Warning: kubectl failed or not found, skip refresh'"
                         
                         // Hiển thị thông tin truy cập
-                        def domain = sh(script: "yq -r '.global.domain' yas-gitops/${env.VALUES_FILE}", returnStdout: true).trim()
-                        def env_tag = sh(script: "yq -r '.global.envTag' yas-gitops/${env.VALUES_FILE}", returnStdout: true).trim()
-                        def nodeIp = sh(script: "kubectl get nodes -o jsonpath='{.items[0].status.addresses[?(@.type==\"InternalIP\")].address}'", returnStdout: true).trim()
+                        def domain = sh(script: "yq -r '.domain' yas-gitops/${env.VALUES_FILE}", returnStdout: true).trim()
+                        def env_tag = sh(script: "yq -r '.envTag' yas-gitops/${env.VALUES_FILE}", returnStdout: true).trim()
+                        def nodeIp = sh(script: "kubectl get nodes -o jsonpath='{.items[0].status.addresses[?(@.type==\"InternalIP\")].address}'", returnStdout: true).trim() || "127.0.0.1"
                         
                         echo "=========================================================="
                         echo " DEPLOYMENT TRIGGERED TO ${params.TARGET_ENV.toUpperCase()}"
