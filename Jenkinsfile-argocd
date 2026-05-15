@@ -9,28 +9,29 @@ pipeline {
 
     parameters {
         choice(name: 'TARGET_ENV', choices: ['dev', 'staging'], description: 'Environment to deploy to')
-        string(name: 'TARGET_TAG', defaultValue: '', description: 'Specific tag to deploy (e.g., v1.2.3). If empty, branch logic is used.')
-        string(name: 'common_branch', defaultValue: '', description: 'Override branch for all services (used by CI)')
-        // Tham số cho từng service
-        string(name: 'backoffice_bff', defaultValue: 'main', description: 'Branch for backoffice-bff')
-        string(name: 'backoffice_ui', defaultValue: 'main', description: 'Branch for backoffice-ui')
-        string(name: 'storefront_bff', defaultValue: 'main', description: 'Branch for storefront-bff')
-        string(name: 'storefront_ui', defaultValue: 'main', description: 'Branch for storefront-ui')
-        string(name: 'cart', defaultValue: 'main', description: 'Branch for cart')
-        string(name: 'customer', defaultValue: 'main', description: 'Branch for customer')
-        string(name: 'inventory', defaultValue: 'main', description: 'Branch for inventory')
-        string(name: 'location', defaultValue: 'main', description: 'Branch for location')
-        string(name: 'media', defaultValue: 'main', description: 'Branch for media')
-        string(name: 'order', defaultValue: 'main', description: 'Branch for order')
-        string(name: 'payment', defaultValue: 'main', description: 'Branch for payment')
-        string(name: 'product', defaultValue: 'main', description: 'Branch for product')
-        string(name: 'promotion', defaultValue: 'main', description: 'Branch for promotion')
-        string(name: 'rating', defaultValue: 'main', description: 'Branch for rating')
-        string(name: 'search', defaultValue: 'main', description: 'Branch for search')
-        string(name: 'tax', defaultValue: 'main', description: 'Branch for tax')
-        string(name: 'recommendation', defaultValue: 'main', description: 'Branch for recommendation')
-        string(name: 'webhook', defaultValue: 'main', description: 'Branch for webhook')
-        string(name: 'sampledata', defaultValue: 'main', description: 'Branch for sampledata')
+        string(name: 'TARGET_TAG', defaultValue: '', description: 'Specific tag to deploy (e.g., v1.2.3). Applies to ALL services.')
+        // Tham số cho từng service — CI gửi commit SHA (image tag) cho service có thay đổi
+        // defaultValue = '' nghĩa là service không thay đổi → giữ nguyên tag hiện tại
+        string(name: 'backoffice_bff', defaultValue: '', description: 'Image tag for backoffice-bff')
+        string(name: 'backoffice_ui', defaultValue: '', description: 'Image tag for backoffice-ui')
+        string(name: 'storefront_bff', defaultValue: '', description: 'Image tag for storefront-bff')
+        string(name: 'storefront_ui', defaultValue: '', description: 'Image tag for storefront-ui')
+        string(name: 'cart', defaultValue: '', description: 'Image tag for cart')
+        string(name: 'customer', defaultValue: '', description: 'Image tag for customer')
+        string(name: 'delivery', defaultValue: '', description: 'Image tag for delivery')
+        string(name: 'inventory', defaultValue: '', description: 'Image tag for inventory')
+        string(name: 'location', defaultValue: '', description: 'Image tag for location')
+        string(name: 'media', defaultValue: '', description: 'Image tag for media')
+        string(name: 'order', defaultValue: '', description: 'Image tag for order')
+        string(name: 'payment', defaultValue: '', description: 'Image tag for payment')
+        string(name: 'product', defaultValue: '', description: 'Image tag for product')
+        string(name: 'promotion', defaultValue: '', description: 'Image tag for promotion')
+        string(name: 'rating', defaultValue: '', description: 'Image tag for rating')
+        string(name: 'search', defaultValue: '', description: 'Image tag for search')
+        string(name: 'tax', defaultValue: '', description: 'Image tag for tax')
+        string(name: 'recommendation', defaultValue: '', description: 'Image tag for recommendation')
+        string(name: 'webhook', defaultValue: '', description: 'Image tag for webhook')
+        string(name: 'sampledata', defaultValue: '', description: 'Image tag for sampledata')
     }
 
     environment {
@@ -68,33 +69,38 @@ pipeline {
                 script {
                     def services = [
                         "backoffice-bff", "backoffice-ui", "storefront-bff", "storefront-ui", 
-                        "cart", "customer", "inventory", "location", "media", "order", 
+                        "cart", "customer", "delivery", "inventory", "location", "media", "order", 
                         "payment", "product", "promotion", "rating", "search", "tax", 
                         "recommendation", "webhook", "sampledata"
                     ]
                     
-                    // Bọc bằng credentials để lấy Token truy cập GitHub mã nguồn hợp lệ
-                    withCredentials([usernamePassword(credentialsId: 'jenkins-yas', 
-                                    passwordVariable: 'GITHUB_APP_TOKEN', 
-                                    usernameVariable: 'GITHUB_APP_USER')]) {
-                                    
-                        for (svc in services) {
-                            def paramName = svc.replace('-', '_')
-                            // Ưu tiên branch riêng của service, nếu không có/là main thì mới dùng common_branch
-                            def branchName = (params."${paramName}" && params."${paramName}" != 'main') ? params."${paramName}" : (params.common_branch ?: 'main')
-                            def tag = 'latest'
-
-                            if (params.TARGET_TAG) {
-                                tag = params.TARGET_TAG
-                            } else if (branchName != 'main') {
-                                echo "Fetching latest commit ID for ${svc} from branch ${branchName}..."
-                                // Đã thêm x-access-token sử dụng GITHUB_APP_TOKEN để bypass xác thực
-                                tag = sh(script: "git ls-remote https://x-access-token:${GITHUB_APP_TOKEN}@github.com/BongLanTrungMuoi/yas-CI-CD.git ${branchName} | cut -f1 | cut -c1-7", returnStdout: true).trim()
-                            }
-                            
-                            echo "Setting ${svc} to tag: ${tag} in yas-gitops/${env.VALUES_FILE}"
+                    def updatedServices = []
+                    
+                    for (svc in services) {
+                        def paramName = svc.replace('-', '_')
+                        def svcTag = params."${paramName}"
+                        
+                        if (params.TARGET_TAG) {
+                            // Staging release: áp dụng TARGET_TAG cho tất cả services
+                            def tag = params.TARGET_TAG
+                            echo "Setting ${svc} to tag: ${tag} (from TARGET_TAG)"
                             sh "yq -i '.services.\"${svc}\".tag = \"${tag}\"' yas-gitops/${env.VALUES_FILE}"
+                            updatedServices << svc
+                        } else if (svcTag) {
+                            // CI gửi image tag (commit SHA) cho service này → có thay đổi code
+                            echo "Setting ${svc} to tag: ${svcTag} (from CI)"
+                            sh "yq -i '.services.\"${svc}\".tag = \"${svcTag}\"' yas-gitops/${env.VALUES_FILE}"
+                            updatedServices << svc
+                        } else {
+                            // Không có param → service không thay đổi → giữ nguyên tag hiện tại
+                            echo "⏩ Skipping ${svc} — no changes (keeping current tag)"
                         }
+                    }
+                    
+                    if (updatedServices.isEmpty()) {
+                        echo "⚠️ No services were updated."
+                    } else {
+                        echo "✅ Updated services: ${updatedServices.join(', ')}"
                     }
                 }
             }
@@ -141,7 +147,11 @@ pipeline {
                         // Hiển thị thông tin truy cập
                         def domain = sh(script: "yq -r '.domain' yas-gitops/${env.VALUES_FILE}", returnStdout: true).trim()
                         def env_tag = sh(script: "yq -r '.envTag' yas-gitops/${env.VALUES_FILE}", returnStdout: true).trim()
-                        def nodeIp = sh(script: "kubectl get nodes -o jsonpath='{.items[0].status.addresses[?(@.type==\"InternalIP\")].address}'", returnStdout: true).trim() || "127.0.0.1"
+                        def nodeIp = sh(script: "kubectl get nodes -o jsonpath='{.items[0].status.addresses[?(@.type==\"InternalIP\")].address}'", returnStdout: true).trim()
+                        if (!nodeIp) {
+                            echo "⚠️ Warning: Could not detect Node IP from cluster. Please check kubectl/KUBECONFIG."
+                            nodeIp = "<NODE_IP>"
+                        }
                         
                         echo "=========================================================="
                         echo " DEPLOYMENT TRIGGERED TO ${params.TARGET_ENV.toUpperCase()}"
@@ -155,6 +165,12 @@ pipeline {
                     }
                 }
             }
+        }
+    }
+
+    post {
+        cleanup {
+            cleanWs()
         }
     }
 }
