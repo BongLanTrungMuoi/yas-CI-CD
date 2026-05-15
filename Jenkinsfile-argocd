@@ -73,20 +73,27 @@ pipeline {
                         "recommendation", "webhook", "sampledata"
                     ]
                     
-                    for (svc in services) {
-                        def paramName = svc.replace('-', '_')
-                        def branchName = params.common_branch ?: (params."${paramName}" ?: 'main')
-                        def tag = 'latest'
+                    // Bọc bằng credentials để lấy Token truy cập GitHub mã nguồn hợp lệ
+                    withCredentials([usernamePassword(credentialsId: 'jenkins-yas', 
+                                    passwordVariable: 'GITHUB_APP_TOKEN', 
+                                    usernameVariable: 'GITHUB_APP_USER')]) {
+                                    
+                        for (svc in services) {
+                            def paramName = svc.replace('-', '_')
+                            def branchName = params.common_branch ?: (params."${paramName}" ?: 'main')
+                            def tag = 'latest'
 
-                        if (params.TARGET_TAG) {
-                            tag = params.TARGET_TAG
-                        } else if (branchName != 'main') {
-                            echo "Fetching latest commit ID for ${svc} from branch ${branchName}..."
-                            tag = sh(script: "git ls-remote https://github.com/Hownameee/yas.git ${branchName} | cut -f1 | cut -c1-7", returnStdout: true).trim()
+                            if (params.TARGET_TAG) {
+                                tag = params.TARGET_TAG
+                            } else if (branchName != 'main') {
+                                echo "Fetching latest commit ID for ${svc} from branch ${branchName}..."
+                                // Đã thêm x-access-token sử dụng GITHUB_APP_TOKEN để bypass xác thực
+                                tag = sh(script: "git ls-remote https://x-access-token:${GITHUB_APP_TOKEN}@github.com/BongLanTrungMuoi/yas-CI-CD.git ${branchName} | cut -f1 | cut -c1-7", returnStdout: true).trim()
+                            }
+                            
+                            echo "Setting ${svc} to tag: ${tag} in yas-gitops/${env.VALUES_FILE}"
+                            sh "yq -i '.services.\"${svc}\".tag = \"${tag}\"' yas-gitops/${env.VALUES_FILE}"
                         }
-                        
-                        echo "Setting ${svc} to tag: ${tag} in yas-gitops/${env.VALUES_FILE}"
-                        sh "yq -i '.services.\"${svc}\".tag = \"${tag}\"' yas-gitops/${env.VALUES_FILE}"
                     }
                 }
             }
