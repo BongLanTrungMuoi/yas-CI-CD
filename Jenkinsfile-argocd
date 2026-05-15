@@ -141,7 +141,12 @@ pipeline {
                         // Hiển thị thông tin truy cập
                         def domain = sh(script: "yq -r '.domain' yas-gitops/${env.VALUES_FILE}", returnStdout: true).trim()
                         def env_tag = sh(script: "yq -r '.envTag' yas-gitops/${env.VALUES_FILE}", returnStdout: true).trim()
-                        def nodeIp = sh(script: "kubectl get nodes -o jsonpath='{.items[0].status.addresses[?(@.type==\"InternalIP\")].address}'", returnStdout: true).trim() || "127.0.0.1"
+                        def nodeIp = "57.155.90.89"
+                        try {
+                            nodeIp = sh(script: "kubectl get nodes -o jsonpath='{.items[0].status.addresses[?(@.type==\"InternalIP\")].address}'", returnStdout: true).trim()
+                        } catch (Exception e) {
+                            echo "Warning: Could not get Node IP using kubectl, defaulting to Azure IP: 57.155.90.89"
+                        }
                         
                         echo "=========================================================="
                         echo " DEPLOYMENT TRIGGERED TO ${params.TARGET_ENV.toUpperCase()}"
