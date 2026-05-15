@@ -11,7 +11,7 @@ pipeline {
         choice(name: 'TARGET_ENV', choices: ['dev', 'staging'], description: 'Environment to deploy to')
         string(name: 'TARGET_TAG', defaultValue: '', description: 'Specific tag to deploy (e.g., v1.2.3). If empty, branch logic is used.')
         string(name: 'common_branch', defaultValue: '', description: 'Override branch for all services (used by CI)')
-        // Tham số cho từng service đúng như yêu cầu mục 4
+        // Tham số cho từng service
         string(name: 'backoffice_bff', defaultValue: 'main', description: 'Branch for backoffice-bff')
         string(name: 'backoffice_ui', defaultValue: 'main', description: 'Branch for backoffice-ui')
         string(name: 'storefront_bff', defaultValue: 'main', description: 'Branch for storefront-bff')
@@ -124,23 +124,27 @@ pipeline {
         stage('ArgoCD Sync & Info') {
             steps {
                 script {
-                    // Force ArgoCD sync
-                    sh "kubectl patch application ${env.ARGO_APP} -n argocd --type merge -p '{\"metadata\":{\"annotations\":{\"argocd.argoproj.io/refresh\":\"hard\"}}}'"
-                    
-                    // Mục 5: Hiển thị thông tin truy cập
-                    def domain = sh(script: "yq -r '.global.domain' yas-gitops/${env.VALUES_FILE}", returnStdout: true).trim()
-                    def env_tag = sh(script: "yq -r '.global.envTag' yas-gitops/${env.VALUES_FILE}", returnStdout: true).trim()
-                    def nodeIp = sh(script: "kubectl get nodes -o jsonpath='{.items[0].status.addresses[?(@.type==\"InternalIP\")].address}'", returnStdout: true).trim()
-                    
-                    echo "=========================================================="
-                    echo " DEPLOYMENT TRIGGERED TO ${params.TARGET_ENV.toUpperCase()}"
-                    echo "----------------------------------------------------------"
-                    echo "Add this to your /etc/hosts:"
-                    echo "${nodeIp} identity-${env_tag}.${domain}"
-                    echo "${nodeIp} backoffice-${env_tag}.${domain}"
-                    echo "${nodeIp} storefront-${env_tag}.${domain}"
-                    echo "${nodeIp} api-${env_tag}.${domain}"
-                    echo "=========================================================="
+                    // Nạp file cấu hình Kubeconfig đã mã hóa được lưu trên Jenkins vào biến môi trường KUBECONFIG
+                    configFileProvider([configFile(fileId: 'k8s-minikube-config', variable: 'KUBECONFIG')]) {
+                        
+                        // Force ArgoCD sync bằng kubectl đã có quyền truy cập hợp lệ
+                        sh "kubectl patch application ${env.ARGO_APP} -n argocd --type merge -p '{\"metadata\":{\"annotations\":{\"argocd.argoproj.io/refresh\":\"hard\"}}}'"
+                        
+                        // Hiển thị thông tin truy cập
+                        def domain = sh(script: "yq -r '.global.domain' yas-gitops/${env.VALUES_FILE}", returnStdout: true).trim()
+                        def env_tag = sh(script: "yq -r '.global.envTag' yas-gitops/${env.VALUES_FILE}", returnStdout: true).trim()
+                        def nodeIp = sh(script: "kubectl get nodes -o jsonpath='{.items[0].status.addresses[?(@.type==\"InternalIP\")].address}'", returnStdout: true).trim()
+                        
+                        echo "=========================================================="
+                        echo " DEPLOYMENT TRIGGERED TO ${params.TARGET_ENV.toUpperCase()}"
+                        echo "----------------------------------------------------------"
+                        echo "Add this to your /etc/hosts:"
+                        echo "${nodeIp} identity-${env_tag}.${domain}"
+                        echo "${nodeIp} backoffice-${env_tag}.${domain}"
+                        echo "${nodeIp} storefront-${env_tag}.${domain}"
+                        echo "${nodeIp} api-${env_tag}.${domain}"
+                        echo "=========================================================="
+                    }
                 }
             }
         }
