@@ -6,14 +6,12 @@ on:
       - "order/**"
       - ".github/workflows/actions/action.yaml"
       - ".github/workflows/order-ci.yaml"
-      - "pom.xml"
   pull_request:
     branches: ["main"]
     paths:
       - "order/**"
       - ".github/workflows/actions/action.yaml"
       - ".github/workflows/order-ci.yaml"
-      - "pom.xml"
   workflow_dispatch:
 
 jobs:
