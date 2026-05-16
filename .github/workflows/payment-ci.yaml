@@ -2,6 +2,7 @@ name: payment service ci
 
 on:
   push:
+    branch: ["**"]
     paths:
       - "payment/**"
       - ".github/workflows/actions/action.yaml"
