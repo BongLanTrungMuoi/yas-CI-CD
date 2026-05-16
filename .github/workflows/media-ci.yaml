@@ -32,15 +32,31 @@ jobs:
 
       - name: Set Docker Tag
         run: |
-          if [ "${{ github.ref_name }}" == "main" ]; then
-            echo "DOCKER_TAG=latest" >> $GITHUB_ENV
-          else
-            echo "DOCKER_TAG=${{ github.sha }}" >> $GITHUB_ENV
-          fi
+          echo "DOCKER_SHA=$(echo ${{ github.sha }} | cut -c1-7)" >> $GITHUB_ENV
 
       - name: Build and push Docker image
         uses: docker/build-push-action@v6
         with:
           context: ./media
           push: true
-          tags: ${{ secrets.DOCKERHUB_USERNAME }}/yas-media:${{ env.DOCKER_TAG }}
+          tags: |
+            ${{ secrets.DOCKERHUB_USERNAME }}/yas-media:latest
+            ${{ secrets.DOCKERHUB_USERNAME }}/yas-media:${{ env.DOCKER_SHA }}
+
+      - name: Update GitOps Repo
+        if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+        env:
+          GITOPS_TOKEN: ${{ secrets.GITOPS_TOKEN }}
+        run: |
+          git config --global user.email "github-actions@github.com"
+          git config --global user.name "GitHub Actions"
+          git clone https://x-access-token:${GITOPS_TOKEN}@github.com/BongLanTrungMuoi/yas-gitops.git
+          cd yas-gitops
+          yq -i '.services.media.tag = "${{ env.DOCKER_SHA }}"' values-dev.yaml
+          if git diff --quiet; then
+            echo "No changes to commit"
+          else
+            git add values-dev.yaml
+            git commit -m "deploy: update media image to ${{ env.DOCKER_SHA }} [skip ci]"
+            git push origin main
+          fi
