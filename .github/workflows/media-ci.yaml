@@ -8,7 +8,7 @@ on:
       - ".github/workflows/media-ci.yaml"
       - "pom.xml"
   pull_request:
-    branches: [ "main" ]
+    branches: ["main"]
     paths:
       - "media/**"
       - ".github/workflows/actions/action.yaml"
@@ -43,14 +43,20 @@ jobs:
             ${{ secrets.DOCKERHUB_USERNAME }}/yas-media:latest
             ${{ secrets.DOCKERHUB_USERNAME }}/yas-media:${{ env.DOCKER_SHA }}
 
+      - name: Generate GitHub App Token
+        id: generate_token
+        uses: actions/create-github-app-token@v1
+        with:
+          app-id: ${{ secrets.APP_ID }}
+          private-key: ${{ secrets.APP_PRIVATE_KEY }}
+          owner: ${{ github.repository_owner }}
+
       - name: Update GitOps Repo
         if: github.ref == 'refs/heads/main' && github.event_name == 'push'
-        env:
-          GITOPS_TOKEN: ${{ secrets.GITOPS_TOKEN }}
         run: |
-          git config --global user.email "github-actions@github.com"
-          git config --global user.name "GitHub Actions"
-          git clone https://x-access-token:${GITOPS_TOKEN}@github.com/BongLanTrungMuoi/yas-gitops.git
+          git config --global user.email "github-actions[bot]@users.noreply.github.com"
+          git config --global user.name "github-actions[bot]"
+          git clone https://x-access-token:${{ steps.generate_token.outputs.token }}@github.com/${{ github.repository_owner }}/yas-gitops.git
           cd yas-gitops
           yq -i '.services.media.tag = "${{ env.DOCKER_SHA }}"' values-dev.yaml
           if git diff --quiet; then
