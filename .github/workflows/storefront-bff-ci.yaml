@@ -2,6 +2,10 @@ name: storefront-bff service ci
 
 on:
   push:
+    branches-ignore:
+      - "rc_v*"
+    tags-ignore:
+      - "rc_v*"
     paths:
       - "storefront-bff/**"
       - ".github/workflows/actions/action.yaml"

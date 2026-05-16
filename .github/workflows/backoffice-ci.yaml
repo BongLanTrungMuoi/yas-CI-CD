@@ -2,6 +2,10 @@ name: backoffice service ci
 
 on:
   push:
+    branches-ignore:
+      - "rc_v*"
+    tags-ignore:
+      - "rc_v*"
     paths:
       - "backoffice/**"
       - ".github/workflows/actions/action.yaml"

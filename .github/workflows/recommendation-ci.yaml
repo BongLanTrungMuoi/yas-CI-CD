@@ -2,6 +2,10 @@ name: recommendation service ci
 
 on:
   push:
+    branches-ignore:
+      - "rc_v*"
+    tags-ignore:
+      - "rc_v*"
     paths:
       - "recommendation/**"
       - ".github/workflows/actions/action.yaml"

@@ -2,6 +2,10 @@ name: location service ci
 
 on:
   push:
+    branches-ignore:
+      - "rc_v*"
+    tags-ignore:
+      - "rc_v*"
     paths:
       - "location/**"
       - ".github/workflows/actions/action.yaml"

@@ -2,6 +2,10 @@ name: product service ci
 
 on:
   push:
+    branches-ignore:
+      - "rc_v*"
+    tags-ignore:
+      - "rc_v*"
     paths:
       - "product/**"
       - ".github/workflows/actions/action.yaml"
