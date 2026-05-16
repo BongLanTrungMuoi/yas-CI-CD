@@ -2,6 +2,8 @@ name: media service ci
 
 on:
   push:
+    branches: [ "main" ]
+    tags: [ "v*" ]
     paths:
       - "media/**"
       - ".github/workflows/actions/action.yaml"
@@ -30,9 +32,17 @@ jobs:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
-      - name: Set Docker Tag
+      - name: Set Environment & Tags
         run: |
-          echo "DOCKER_SHA=$(echo ${{ github.sha }} | cut -c1-7)" >> $GITHUB_ENV
+          if [[ "${{ github.ref }}" == refs/tags/v* ]]; then
+            echo "ENV=staging" >> $GITHUB_ENV
+            echo "VALUES_FILE=value-staging.yaml" >> $GITHUB_ENV
+            echo "DOCKER_TAG=${{ github.ref_name }}" >> $GITHUB_ENV
+          else
+            echo "ENV=dev" >> $GITHUB_ENV
+            echo "VALUES_FILE=values-dev.yaml" >> $GITHUB_ENV
+            echo "DOCKER_TAG=$(echo ${{ github.sha }} | cut -c1-7)" >> $GITHUB_ENV
+          fi
 
       - name: Build and push Docker image
         uses: docker/build-push-action@v6
@@ -41,7 +51,7 @@ jobs:
           push: true
           tags: |
             ${{ secrets.DOCKERHUB_USERNAME }}/yas-media:latest
-            ${{ secrets.DOCKERHUB_USERNAME }}/yas-media:${{ env.DOCKER_SHA }}
+            ${{ secrets.DOCKERHUB_USERNAME }}/yas-media:${{ env.DOCKER_TAG }}
 
       #generate github app token
       - name: Generate GitHub App Token
@@ -53,17 +63,20 @@ jobs:
           owner: ${{ github.repository_owner }}
 
       - name: Update GitOps Repo
-        if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+        if: github.event_name == 'push'
         run: |
           git config --global user.email "github-actions[bot]@users.noreply.github.com"
           git config --global user.name "github-actions[bot]"
           git clone https://x-access-token:${{ steps.generate_token.outputs.token }}@github.com/${{ github.repository_owner }}/yas-gitops.git
           cd yas-gitops
-          yq -i '.services.media.tag = "${{ env.DOCKER_SHA }}"' values-dev.yaml
+          
+          yq -i ".services.media.tag = \"${{ env.DOCKER_TAG }}\"" ${{ env.VALUES_FILE }}
+          
           if git diff --quiet; then
             echo "No changes to commit"
           else
-            git add values-dev.yaml
-            git commit -m "deploy: update media image to ${{ env.DOCKER_SHA }} [skip ci]"
+            git add ${{ env.VALUES_FILE }}
+            git commit -m "deploy: update media to ${{ env.DOCKER_TAG }} in ${{ env.ENV }} [skip ci]"
             git push origin main
           fi
+
