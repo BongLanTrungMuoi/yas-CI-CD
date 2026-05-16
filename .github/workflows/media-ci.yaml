@@ -43,6 +43,7 @@ jobs:
             ${{ secrets.DOCKERHUB_USERNAME }}/yas-media:latest
             ${{ secrets.DOCKERHUB_USERNAME }}/yas-media:${{ env.DOCKER_SHA }}
 
+      #generate github app token
       - name: Generate GitHub App Token
         id: generate_token
         uses: actions/create-github-app-token@v1
