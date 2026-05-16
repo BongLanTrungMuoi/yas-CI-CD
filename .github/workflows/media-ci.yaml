@@ -8,14 +8,12 @@ on:
       - "media/**"
       - ".github/workflows/actions/action.yaml"
       - ".github/workflows/media-ci.yaml"
-      - "pom.xml"
   pull_request:
     branches: ["main"]
     paths:
       - "media/**"
       - ".github/workflows/actions/action.yaml"
       - ".github/workflows/media-ci.yaml"
-      - "pom.xml"
   workflow_dispatch:
 
 jobs:
@@ -37,7 +35,7 @@ jobs:
         run: |
           COMMIT_ID=$(echo ${{ github.sha }} | cut -c1-7)
           DOCKER_IMAGE=${{ secrets.DOCKERHUB_USERNAME }}/yas-media
-          
+
           if [[ "${{ github.ref_type }}" == "tag" ]]; then
             # Case 1: Git Tag (Staging)
             echo "ENV=staging" >> $GITHUB_ENV
